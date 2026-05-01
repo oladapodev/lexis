@@ -1,0 +1,101 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and preferences.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "theme": { "type": "string", "enum": ["light", "dark", "system"] }
+      },
+      "required": ["uid", "email"]
+    },
+    "Page": {
+      "title": "Page",
+      "description": "A workspace page containing blocks.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "icon": { "type": "string" },
+        "coverImage": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "workspaceId": { "type": "string" },
+        "isArchived": { "type": "boolean" },
+        "isPublished": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "title"]
+    },
+    "Block": {
+      "title": "Block",
+      "description": "A single piece of content within a page.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["paragraph", "heading1", "heading2", "heading3", "bulletList", "orderedList", "todoList", "image", "code", "audio"] },
+        "content": { "type": "object" },
+        "position": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["id", "type", "position"]
+    },
+    "Update": {
+      "title": "Update",
+      "description": "A Yjs update fragment for real-time sync.",
+      "type": "object",
+      "properties": {
+        "update": { "type": "array", "items": { "type": "number" } },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "seq": { "type": "number" },
+        "userId": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "isPublished": { "type": "boolean" }
+      },
+      "required": ["update", "timestamp", "userId", "ownerId", "isPublished"]
+    },
+    "Presence": {
+      "title": "Presence",
+      "description": "User presence data for collaborators.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "avatarSeed": { "type": "string" },
+        "lastActive": { "type": "string", "format": "date-time" },
+        "cursorPos": { "type": "number" },
+        "ownerId": { "type": "string" },
+        "isPublished": { "type": "boolean" }
+      },
+      "required": ["uid", "ownerId", "isPublished"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Stores user profile data."
+    },
+    "/pages/{pageId}": {
+      "schema": "Page",
+      "description": "Stores page metadata."
+    },
+    "/pages/{pageId}/blocks/{blockId}": {
+      "schema": "Block",
+      "description": "Stores blocks associated with a page."
+    },
+    "/pages/{pageId}/updates/{updateId}": {
+      "schema": "Update",
+      "description": "Stores real-time document updates."
+    },
+    "/pages/{pageId}/presences/{userId}": {
+      "schema": "Presence",
+      "description": "Stores real-time collaborator presence."
+    }
+  }
+}

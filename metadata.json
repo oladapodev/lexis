@@ -1,0 +1,13 @@
+{
+  "name": "Remix: Lexis Workspace",
+  "description": "A powerful workspace for documents, collaboration, and AI-powered intelligence.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "Real-time collaboration",
+    "Block-based editor",
+    "AI assistance",
+    "Voice transcription"
+  ]
+}

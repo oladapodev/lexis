@@ -1,0 +1,192 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  body {
+    @apply font-sans text-neutral-900 bg-white dark:bg-[#191919] dark:text-neutral-100 transition-colors duration-300 antialiased;
+  }
+}
+
+@layer utilities {
+  .transition-theme {
+    @apply transition-all duration-300;
+  }
+}
+
+/* Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-neutral-200 dark:bg-neutral-800 rounded-full hover:bg-neutral-300 dark:hover:bg-neutral-700;
+}
+
+/* Custom TipTap Styles to feel blocky */
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  @apply text-neutral-300 dark:text-neutral-700;
+  pointer-events: none;
+  height: 0;
+}
+
+.ProseMirror {
+  @apply min-h-[600px] outline-none py-4 text-[17px] tracking-[-0.01em];
+}
+
+.ProseMirror p {
+  @apply my-1.5 leading-relaxed;
+}
+
+.ProseMirror h1 {
+  @apply text-4xl font-bold mt-10 mb-6 tracking-tight text-neutral-900 dark:text-neutral-50;
+}
+
+.ProseMirror h2 {
+  @apply text-2xl font-bold mt-8 mb-4 tracking-tight text-neutral-800 dark:text-neutral-200;
+}
+
+.ProseMirror h3 {
+  @apply text-xl font-bold mt-6 mb-3 tracking-tight text-neutral-700 dark:text-neutral-300;
+}
+
+.ProseMirror ul {
+  @apply list-disc list-inside my-4 space-y-2;
+}
+
+.ProseMirror ol {
+  @apply list-decimal list-inside my-4 space-y-2;
+}
+
+.ProseMirror blockquote {
+  @apply border-l-4 border-neutral-200 dark:border-neutral-800 pl-4 my-6 italic text-neutral-600 dark:text-neutral-400;
+}
+
+.ProseMirror code {
+  @apply bg-neutral-100 dark:bg-neutral-800 rounded px-1.5 py-0.5 font-mono text-[0.9em] text-neutral-800 dark:text-neutral-200;
+}
+
+.ProseMirror pre {
+  @apply bg-neutral-50 dark:bg-neutral-900/50 rounded-2xl p-6 my-8 overflow-x-auto border border-neutral-100 dark:border-neutral-800 font-mono text-sm;
+}
+
+.ProseMirror pre code {
+  @apply bg-transparent p-0 block leading-relaxed;
+}
+
+/* Task List Styles */
+.ProseMirror ul[data-type="taskList"] {
+  @apply list-none p-0 mt-6;
+}
+
+.ProseMirror ul[data-type="taskList"] li {
+  @apply flex items-start mb-2 gap-3;
+}
+
+.ProseMirror ul[data-type="taskList"] li > label {
+  @apply mt-1 shrink-0 select-none cursor-pointer;
+}
+
+.ProseMirror ul[data-type="taskList"] li > div {
+  @apply flex-1 min-w-0;
+}
+
+.ProseMirror ul[data-type="taskList"] input[type="checkbox"] {
+  @apply appearance-none w-4 h-4 rounded border-2 border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 checked:bg-black dark:checked:bg-white checked:border-transparent transition-all cursor-pointer relative after:content-[''] after:hidden checked:after:block after:absolute after:left-1 after:top-0 after:w-[4px] after:h-[8px] after:border-white dark:after:border-black after:border-b-2 after:border-r-2 after:rotate-45;
+}
+
+/* Table Styles */
+.ProseMirror table {
+  @apply border-collapse table-fixed w-full my-8 border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden;
+}
+
+.ProseMirror table td,
+.ProseMirror table th {
+  @apply border border-neutral-200 dark:border-neutral-800 p-3 relative align-top min-w-[100px];
+}
+
+.ProseMirror table th {
+  @apply bg-neutral-50 dark:bg-neutral-900 font-bold text-left;
+}
+
+.ProseMirror .selectedCell:after {
+  @apply content-[''] absolute inset-0 bg-neutral-200/30 dark:bg-neutral-100/10 pointer-events-none z-10;
+}
+
+/* Notion-like block styles */
+.ProseMirror > * {
+  @apply transition-colors duration-200 rounded-sm relative;
+}
+
+.ProseMirror > *:hover {
+  @apply bg-neutral-50/50 dark:bg-neutral-900/30;
+}
+
+.ProseMirror hr {
+  @apply my-10 border-t border-neutral-200 dark:border-neutral-800;
+}
+
+.ProseMirror img {
+  @apply transition-all duration-300;
+}
+
+.ProseMirror img.ProseMirror-selectednode {
+  @apply ring-4 ring-blue-500/30 dark:ring-blue-500/20 outline-none rounded-xl;
+}
+
+.ProseMirror mark {
+  @apply bg-yellow-200 dark:bg-yellow-900/50 text-neutral-900 dark:text-neutral-50 px-0.5 rounded transition-all cursor-default;
+}
+
+.ProseMirror mark:hover {
+  @apply bg-yellow-300 dark:bg-yellow-800/70;
+}
+
+.ProseMirror .has-focus {
+  @apply bg-neutral-50/80 dark:bg-neutral-900/40;
+}
+
+/* Selection style */
+::selection {
+  @apply bg-neutral-200 dark:bg-neutral-700/50;
+}
+
+/* Custom Scrollbar Utilities */
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-neutral-200 dark:bg-neutral-800 rounded-full hover:bg-neutral-300 dark:hover:bg-neutral-700 transition-colors;
+  }
+
+  .custom-scrollbar-hidden::-webkit-scrollbar {
+    display: none;
+  }
+}
+

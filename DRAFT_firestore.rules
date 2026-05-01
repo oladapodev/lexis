@@ -1,0 +1,114 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Phase 3: Global Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isOwner(ownerId) {
+      return isSignedIn() && request.auth.uid == ownerId;
+    }
+
+    // --- Entity Validations ---
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email'])
+        && data.uid is string && data.uid == request.auth.uid
+        && data.email is string && data.email.size() <= 256
+        && (!data.keys().hasAny(['displayName']) || data.displayName is string && data.displayName.size() <= 100)
+        && (!data.keys().hasAny(['photoURL']) || data.photoURL is string && data.photoURL.size() <= 1000)
+        && (!data.keys().hasAny(['theme']) || data.theme in ['light', 'dark', 'system']);
+    }
+
+    function isValidPage(data) {
+      return data.keys().hasAll(['ownerId', 'title', 'isArchived', 'isPublished'])
+        && data.ownerId == request.auth.uid
+        && data.title is string && data.title.size() <= 500
+        && data.isArchived is bool
+        && data.isPublished is bool
+        && (!data.keys().hasAny(['workspaceId']) || data.workspaceId is string && data.workspaceId.size() <= 128)
+        && (!data.keys().hasAny(['icon']) || data.icon is string && data.icon.size() <= 10)
+        && (!data.keys().hasAny(['coverImage']) || data.coverImage is string && data.coverImage.size() <= 1000)
+        && (!data.keys().hasAny(['createdAt']) || data.createdAt == request.time || data.createdAt == resource.data.createdAt)
+        && (!data.keys().hasAny(['updatedAt']) || data.updatedAt == request.time);
+    }
+
+    function isValidUpdate(data) {
+      return data.keys().hasAll(['update', 'timestamp', 'userId'])
+        && data.update is list && data.update.size() <= 100000 // 100kb per update fragment
+        && data.timestamp == request.time
+        && data.userId == request.auth.uid;
+    }
+
+    function isValidPresence(data) {
+      return data.keys().hasAll(['uid', 'lastActive'])
+        && data.uid == request.auth.uid
+        && data.lastActive == request.time
+        && (!data.keys().hasAny(['displayName']) || data.displayName is string && data.displayName.size() <= 100)
+        && (!data.keys().hasAny(['photoURL']) || data.photoURL is string && data.photoURL.size() <= 1000)
+        && (!data.keys().hasAny(['cursorPos']) || data.cursorPos is int);
+    }
+
+    // --- Collection Matches ---
+
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isSignedIn() && userId == request.auth.uid && isValidUser(incoming());
+      allow update: if isSignedIn() && userId == request.auth.uid && isValidUser(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'theme', 'email']);
+    }
+
+    match /pages/{pageId} {
+      allow get: if isSignedIn() && (isOwner(existing().ownerId) || existing().isPublished == true);
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || resource.data.isPublished == true);
+      
+      allow create: if isSignedIn() && isValidId(pageId) && isValidPage(incoming());
+      
+      allow update: if isSignedIn() && isValidId(pageId) && isOwner(existing().ownerId) && isValidPage(incoming())
+        && incoming().ownerId == existing().ownerId; // ownerId is immutable
+
+      allow delete: if isSignedIn() && isValidId(pageId) && isOwner(existing().ownerId);
+
+      // Sub-collections: Updates and Presences
+      
+      match /updates/{updateId} {
+        function canAccessPage() {
+          let page = get(/databases/$(database)/documents/pages/$(pageId)).data;
+          return isOwner(page.ownerId) || page.isPublished == true;
+        }
+
+        allow list, get: if isSignedIn() && canAccessPage();
+        allow create: if isSignedIn() && isValidId(updateId) && canAccessPage() && isValidUpdate(incoming());
+      }
+
+      match /presences/{uid} {
+        function canAccessPage() {
+          let page = get(/databases/$(database)/documents/pages/$(pageId)).data;
+          return isOwner(page.ownerId) || page.isPublished == true;
+        }
+
+        allow list, get: if isSignedIn() && canAccessPage();
+        allow create, update: if isSignedIn() && uid == request.auth.uid && canAccessPage() && isValidPresence(incoming());
+        allow delete: if isSignedIn() && uid == request.auth.uid;
+      }
+    }
+  }
+}
