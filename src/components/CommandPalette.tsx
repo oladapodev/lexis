@@ -199,7 +199,7 @@ export const CommandPalette: React.FC = () => {
               </div>
               <div className="flex items-center gap-1 text-neutral-400">
                 <Command size={12} />
-                <span className="text-[10px] font-bold">SONAR COMMANDS</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest">Commands</span>
               </div>
             </div>
           </motion.div>

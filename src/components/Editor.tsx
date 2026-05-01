@@ -109,6 +109,7 @@ interface EditorProps {
 
 interface Presence {
   uid: string;
+  clientId?: string;
   displayName: string | null;
   photoURL: string | null;
   avatarSeed?: string;
@@ -120,14 +121,7 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
   if (!pageId || pageId === 'null' || pageId === '') {
     return (
       <div className="flex-1 flex items-center justify-center bg-white dark:bg-[#191919]">
-        <motion.div 
-          initial={{ opacity: 0 }} 
-          animate={{ opacity: 1 }}
-          className="flex flex-col items-center gap-4"
-        >
-          <Loader2 className="animate-spin text-neutral-400" size={32} />
-          <p className="text-sm text-neutral-500 font-medium font-sans">Connecting to workspace...</p>
-        </motion.div>
+        <Loader2 className="animate-spin text-neutral-300 dark:text-neutral-700" size={32} strokeWidth={1.5} />
       </div>
     );
   }
@@ -135,6 +129,7 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
   const { user, profile, toolbarPosition, showFloatingMenu, showBubbleMenu, autoSave } = useAuth();
   const [page, setPage] = useState<PageMetadata | null>(null);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(true);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('saved');
   const [presences, setPresences] = useState<Presence[]>([]);
   const [copied, setCopied] = useState(false);
@@ -143,20 +138,41 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
   const [versions, setVersions] = useState<any[]>([]);
   const [isSavingVersion, setIsSavingVersion] = useState(false);
   const editorContainerRef = useRef<HTMLDivElement>(null);
+  const sessionClientId = useMemo(() => Math.floor(Math.random() * 1000000).toString(), []);
   const navigate = useNavigate();
   const deletedRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const initialSyncCompleted = useRef(false);
 
   const triggerManualSave = () => {
     if (saveStatus === 'saved') {
-      toast.info("No new changes to sync.");
+      toast.info("Already in sync");
       return;
     }
-    window.dispatchEvent(new CustomEvent('sonar-force-sync'));
+    toast.promise(
+      new Promise((resolve) => {
+        window.dispatchEvent(new CustomEvent('sonar-force-sync'));
+        setTimeout(resolve, 800);
+      }),
+      {
+        loading: 'Syncing...',
+        success: 'Sync complete',
+        error: 'Sync failed'
+      }
+    );
   };
 
   // Yjs Initialization
-  const ydoc = useMemo(() => new Y.Doc(), [pageId]);
+  const ydoc = useMemo(() => {
+    console.debug("[Editor] Initializing new Y.Doc for", pageId);
+    return new Y.Doc();
+  }, [pageId]);
+
+  // Use refs for values that change but shouldn't re-trigger the sync effect
+  const pageRef = useRef<PageMetadata | null>(null);
+  useEffect(() => {
+    pageRef.current = page;
+  }, [page]);
 
   const editor = useEditor({
     extensions: [
@@ -234,15 +250,42 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
     },
   }, [ydoc]);
 
+  // Selection Restoration
+  useEffect(() => {
+    if (!editor || !pageId || loading) return;
+    const lastPos = localStorage.getItem(`last-pos-${pageId}`);
+    if (lastPos) {
+      const pos = parseInt(lastPos);
+      try {
+        if (pos <= editor.state.doc.content.size) {
+          editor.commands.setTextSelection(pos);
+          editor.commands.focus();
+        }
+      } catch (e) {}
+    }
+    
+    const saveSelection = () => {
+      const { from } = editor.state.selection;
+      localStorage.setItem(`last-pos-${pageId}`, from.toString());
+    };
+    editor.on('selectionUpdate', saveSelection);
+    return () => {
+      editor.off('selectionUpdate', saveSelection);
+    };
+  }, [editor, pageId, loading]);
+
   const updateCursor = useMemo(() => {
     return (pos: number) => {
       if (!pageId || pageId === 'null' || !user || !page) return;
         const presenceDoc = doc(db, `pages/${pageId}/presences`, user.uid);
         const displayName = profile?.displayName || user.displayName || (user.isAnonymous ? 'Guest' : 'User');
         setDoc(presenceDoc, { 
+          uid: user.uid,
+          clientId: sessionClientId,
           cursorPos: pos,
           displayName,
           photoURL: profile?.photoURL || user.photoURL,
+          avatarSeed: profile?.avatarSeed || null,
           ownerId: page.ownerId,
           isPublished: page.isPublished,
           lastActive: serverTimestamp()
@@ -269,68 +312,70 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
     // Sync Content via Yjs-Firestore Update Buffer
     useEffect(() => {
       if (!pageId || pageId === 'null' || pageId === '') {
-        setLoading(false);
+        console.debug("[Editor] No pageId, skipping sync");
         return;
       }
 
-      // We need either metadata or a user to even know if we can sync
-      // But we can start the metadata subscription regardless
-      if (!page && !user) return; 
+      console.debug("[Editor] Starting sync for", pageId);
+      setSyncing(true);
+      initialSyncCompleted.current = false;
+
+      // We need a user to start syncing updates (unless it's a public guest view, but even then we wait for metadata)
+      // If we don't have page metadata yet, we wait for it to avoid pushing updates with wrong ownerId
+      if (!page) {
+        console.debug("[Editor] Waiting for metadata before sync");
+        return; 
+      }
 
       const updatesCollection = collection(db, `pages/${pageId}/updates`);
-      setLoading(true);
-
+      
       // Simple local buffer to batch updates
       let updateBuffer: Uint8Array[] = [];
       let timeout: any = null;
 
       const pushBuffer = () => {
-        if (!user || updateBuffer.length === 0 || !page) return;
+        const currentPage = pageRef.current;
+        if (!user || updateBuffer.length === 0 || !currentPage) return;
         setSaveStatus('saving');
         const merged = Y.mergeUpdates(updateBuffer);
         updateBuffer = [];
         
+        console.debug("[Editor] Pushing update buffer...");
         const startTime = Date.now();
         addDoc(updatesCollection, {
           update: Array.from(merged),
           timestamp: serverTimestamp(),
           seq: Date.now(),
           userId: user.uid,
-          ownerId: page.ownerId,
-          isPublished: page.isPublished
+          clientId: sessionClientId,
+          ownerId: currentPage.ownerId,
+          isPublished: currentPage.isPublished
         }).then(() => {
           const elapsed = Date.now() - startTime;
-          const remaining = Math.max(0, 800 - elapsed);
+          const remaining = Math.max(0, 500 - elapsed);
           
           setTimeout(() => {
             setSaveStatus('saved');
-            toast.success("Sonar sync successful", {
-              description: "Changes pushed to shared workspace",
-              duration: 2000,
-              className: "sonar-toast",
-              icon: <Check size={14} className="text-green-500" />
-            });
           }, remaining);
         }).catch(err => {
-          console.error("Failed to push update", err);
+          console.error("[Editor] Failed to push update", err);
           setSaveStatus('idle');
-          toast.error("Sonar sync failed", {
-            description: "Permissions restricted or network error"
-          });
+          toast.error("Cloud sync failed");
         });
       };
 
       // Local -> Remote: Push local updates to Firestore (only if logged in)
       const handleUpdate = (update: Uint8Array, origin: any) => {
-        if (origin === 'remote' || !user) return;
+        if (origin === 'remote' || !user || !initialSyncCompleted.current) return;
         
         setSaveStatus('idle');
         updateBuffer.push(update);
-        if (!timeout) {
+        if (autoSave) {
+          if (timeout) clearTimeout(timeout);
           timeout = setTimeout(() => {
             pushBuffer();
             timeout = null;
-          }, 50);
+          }, 1000); // 1s debounce for stability
         }
       };
       ydoc.on('update', handleUpdate);
@@ -340,22 +385,39 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
       const q = query(
         updatesCollection, 
         orderBy('timestamp', 'asc'), 
-        orderBy('seq', 'asc'),
-        limit(2000)
+        orderBy('seq', 'asc')
       );
 
+      // Safety fallback to clear spinner if snapshot takes too long
+      const safetyTimeout = setTimeout(() => {
+        if (!initialSyncCompleted.current) {
+          console.warn("[Editor] Sync taking too long, forcing clear");
+          initialSyncCompleted.current = true;
+          setSyncing(false);
+        }
+      }, 5000);
+
       const unsubscribe = onSnapshot(q, (snapshot) => {
+        // Handle initial sync completion
+        if (!initialSyncCompleted.current) {
+          console.debug("[Editor] Initial sync snapshot received");
+          initialSyncCompleted.current = true;
+          clearTimeout(safetyTimeout);
+          setSyncing(false);
+        }
+
         const docChanges = snapshot.docChanges();
         if (docChanges.length === 0) {
-          if (loading) setLoading(false);
           return;
         }
 
+        console.debug(`[Editor] Applying ${docChanges.length} remote updates`);
         ydoc.transact(() => {
           docChanges.forEach(change => {
             if (change.type === 'added') {
               const data = change.doc.data();
-              if (!user || data.userId !== user.uid) {
+              // Only apply if it's not our own change that we just pushed from THIS session
+              if (data.clientId !== sessionClientId) {
                 const updateArr = data.update instanceof Uint8Array 
                   ? data.update 
                   : new Uint8Array(data.update); 
@@ -364,28 +426,31 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
             }
           });
         }, 'remote');
-        
-        if (loading) setLoading(false);
       }, (error) => {
+        console.error("[Editor] Sync snapshot error:", error);
         // If it's a public page, don't show full error to guests
         if (!user && error.message.includes('permission')) {
           console.warn("Read-only access for guest");
         } else {
            handleFirestoreError(error, OperationType.LIST, updatesPath);
         }
-        setLoading(false);
+        setSyncing(false);
       });
 
       const handleForceSync = () => pushBuffer();
       window.addEventListener('sonar-force-sync', handleForceSync);
 
       return () => {
+        console.debug("[Editor] Cleaning up sync effect");
         ydoc.off('update', handleUpdate);
         window.removeEventListener('sonar-force-sync', handleForceSync);
-        if (timeout) clearTimeout(timeout);
+        if (timeout) {
+          clearTimeout(timeout);
+          pushBuffer(); // Flush buffer on unmount
+        }
         unsubscribe();
       };
-    }, [pageId, ydoc, user, page]);
+    }, [pageId, ydoc, user, !!page]); // Only re-run when ID, user, or ydoc changes, or metadata status becomes available
 
   // Presence Tracking
   useEffect(() => {
@@ -428,10 +493,11 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
       
       // Filter out self and stale presences (older than 2 minutes)
       const activePresences = p.filter(x => {
+        // Strict filtering of self sessions
         if (x.uid === user.uid) return false;
-        if (!x.lastActive) return true; // Firestore serverTimestamp might be null momentarily
+        if (!x.lastActive) return true;
         const lastActiveTime = x.lastActive.toMillis?.() || x.lastActive;
-        return (now - lastActiveTime) < 120000; // 2 minutes threshold
+        return (now - lastActiveTime) < 120000;
       });
       
       setPresences(activePresences);
@@ -455,7 +521,11 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
 
   useEffect(() => {
     if (!pageId || pageId === 'null') return;
+    console.debug("[Editor] Fetching metadata for", pageId);
+    setLoading(true);
     const unsub = onSnapshot(doc(db, 'pages', pageId), (s) => {
+      console.debug("[Editor] Metadata snapshot received");
+      setLoading(false);
       if (s.exists()) {
         const data = s.data() as PageMetadata;
         
@@ -477,8 +547,11 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
         // Only error if we actually had a reason to expect it existed
         if (user || pageId.length > 5) {
           deletedRef.current = true;
-          toast.error("This page was not found or was deleted.");
-          navigate('/dashboard');
+          toast.error("Access Restricted", {
+            description: user ? "This page was not found or you don't have access." : "Please log in to access this workspace.",
+            duration: 5000
+          });
+          navigate(user ? '/dashboard' : '/');
         }
       }
     }, (error) => {
@@ -575,8 +648,12 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
 
   useEffect(() => {
     const handleOpenHistory = () => setShowHistory(true);
+
     window.addEventListener('editor-open-history', handleOpenHistory);
-    return () => window.removeEventListener('editor-open-history', handleOpenHistory);
+
+    return () => {
+      window.removeEventListener('editor-open-history', handleOpenHistory);
+    };
   }, []);
 
   const [showPrivacyDialog, setShowPrivacyDialog] = useState(false);
@@ -672,7 +749,7 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
       </div>
 
       <div className="flex items-center gap-1 px-2 border-r border-neutral-100 dark:border-neutral-800 shrink-0">
-         <button 
+        <button 
           onClick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()} 
           className={cn("p-1.5 rounded transition-all", editor?.isActive('heading', { level: 1 }) ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
           title="Heading 1"
@@ -685,6 +762,13 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
           title="Heading 2"
         >
           <Heading2 size={16} />
+        </button>
+        <button 
+          onClick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()} 
+          className={cn("p-1.5 rounded transition-all", editor?.isActive('heading', { level: 3 }) ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
+          title="Heading 3"
+        >
+          <Heading3 size={16} />
         </button>
       </div>
 
@@ -753,7 +837,7 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
         </button>
       </div>
 
-      <div className="flex items-center gap-1 px-2 shrink-0">
+      <div className="flex items-center gap-1 px-2 border-r border-neutral-100 dark:border-neutral-800 shrink-0">
         <button 
           onClick={() => {
             const url = window.prompt('Enter URL');
@@ -764,10 +848,25 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
         >
           <LinkIcon size={16} />
         </button>
+      </div>
+
+      <div className="flex items-center gap-1 px-2 border-r border-neutral-100 dark:border-neutral-800 shrink-0">
         <button 
-          onClick={() => fileInputRef.current?.click()} 
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const url = window.prompt("Enter image URL (external) or leave empty to upload from computer");
+            if (url === null) return;
+            
+            if (url.trim()) {
+              editor?.chain().focus().setImage({ src: url.trim() }).run();
+            } else {
+              fileInputRef.current?.click();
+            }
+          }}
           className="p-1.5 rounded text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800"
-          title="Upload Image"
+          title="Add Image"
         >
           <ImageIcon size={16} />
         </button>
@@ -779,11 +878,18 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
           <TableIcon size={16} />
         </button>
         <button 
+          onClick={() => editor?.chain().focus().setHorizontalRule().run()} 
+          className="p-1.5 rounded text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800"
+          title="Horizontal Line"
+        >
+          <Minus size={16} />
+        </button>
+        <button 
           onClick={() => editor?.chain().focus().unsetAllMarks().clearNodes().run()} 
           className="p-1.5 rounded text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800"
-          title="Clear Formatting"
+          title="Reset Style"
         >
-          <Type size={16} className="opacity-50" />
+          <RotateCcw size={16} />
         </button>
       </div>
 
@@ -812,6 +918,25 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
 
   return (
     <div className="flex-1 h-full min-h-0 flex flex-col min-w-0 bg-white dark:bg-[#191919] transition-colors duration-300 overflow-hidden relative">
+      <AnimatePresence mode="wait">
+        {(loading || syncing) && (
+          <motion.div 
+            key="editor-loader"
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.5 }}
+            className="absolute inset-0 z-[150] flex flex-col items-center justify-center bg-white dark:bg-[#191919]"
+          >
+            <Loader2 
+              className="text-neutral-300 dark:text-white" 
+              size={40} 
+              strokeWidth={1.5} 
+              style={{ animation: 'spin 1.5s linear infinite' }}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div 
         className="absolute top-0 left-0 h-0.5 bg-blue-500 z-[60] transition-all duration-150"
         style={{ width: `${scrollProgress}%` }}
@@ -947,9 +1072,9 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
             window.dispatchEvent(new CustomEvent('close-sidebar'));
           }
         }}
-        className="flex-1 h-full overflow-y-auto custom-scrollbar flex flex-col items-center pt-12 pb-32"
+        className="flex-1 h-full overflow-y-auto custom-scrollbar flex flex-col items-center pt-0 pb-32"
       >
-        <div className="w-full max-w-3xl px-12 mt-4 relative z-10" ref={editorContainerRef}>
+        <div className="w-full max-w-3xl px-12 mt-2 relative z-10" ref={editorContainerRef}>
         {/* Remote Cursors Overlay */}
         {presences.map(p => {
           if (p.cursorPos === undefined) return null;
@@ -962,27 +1087,17 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
               style={{ top: coords.top, left: coords.left }}
             >
               <div className="w-[2px] h-5 bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
-              <div className="bg-blue-500 text-white text-[9px] px-1 py-0.5 rounded-sm whitespace-nowrap -mt-6 opacity-80 backdrop-blur-sm">
+              <div className="bg-blue-500 text-white text-[9px] px-1 py-0.5 rounded-sm whitespace-nowrap -mt-6 opacity-80 backdrop-blur-sm shadow-sm ring-1 ring-white/20">
                 {p.displayName || 'Guest'}
               </div>
             </motion.div>
           );
         })}
 
-        <div className="flex items-center gap-4 mb-4">
-          <UserAvatar 
-            photoURL={page?.ownerId === user?.uid ? profile?.photoURL : null} 
-            displayName={page?.ownerId === user?.uid ? profile?.displayName : 'Page Owner'} 
-            avatarSeed={page?.ownerId === user?.uid ? profile?.avatarSeed : 'owner'}
-            size={48}
-            className="rounded-2xl shadow-sm border border-neutral-100 dark:border-neutral-800"
-          />
-          <div className="flex flex-col">
-            <span className="text-xs text-neutral-400 font-medium">Page Title</span>
-            <h1 contentEditable suppressContentEditableWarning onBlur={updateTitle} className="text-4xl font-bold text-neutral-900 dark:text-neutral-50 focus:outline-none empty:before:content-['Untitled'] tracking-tight transition-colors duration-300">
-              {page?.title}
-            </h1>
-          </div>
+        <div className="flex flex-col mb-6">
+          <h1 contentEditable suppressContentEditableWarning onBlur={updateTitle} className="text-4xl font-extrabold text-neutral-900 dark:text-neutral-50 focus:outline-none empty:before:content-['Untitled'] tracking-tighter leading-tight transition-colors duration-300">
+            {page?.title}
+          </h1>
         </div>
 
         {editor && showBubbleMenu && (
@@ -1054,14 +1169,16 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
             exit={{ x: '100%' }}
             className="fixed top-0 right-0 bottom-0 w-80 bg-white dark:bg-[#191919] border-l border-neutral-200 dark:border-neutral-800 z-[110] shadow-2xl flex flex-col font-sans"
           >
-            <div className="p-4 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between">
-              <h3 className="font-bold flex items-center gap-2">
-                <History size={18} />
-                History
-              </h3>
-              <button onClick={() => setShowHistory(false)} className="p-1 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded text-neutral-500">
-                <X size={18} />
-              </button>
+            <div className="p-4 border-b border-neutral-100 dark:border-neutral-800 flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold flex items-center gap-2">
+                  <History size={18} />
+                  History
+                </h3>
+                <button onClick={() => setShowHistory(false)} className="p-1 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded text-neutral-500">
+                  <X size={18} />
+                </button>
+              </div>
             </div>
             <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
               {versions.length === 0 ? (

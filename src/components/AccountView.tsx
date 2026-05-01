@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAuth } from '../lib/AuthWrapper';
 import { UserAvatar } from './UserAvatar';
-import { Mail, Shield, User as UserIcon, Calendar, BadgeCheck, Sun, Moon, Monitor, Bell, Eye, Database, MousePointer2, TextCursorInput, Save } from 'lucide-react';
+import { Mail, Shield, User as UserIcon, Calendar, BadgeCheck, Sun, Moon, Monitor, Bell, Eye, Database, MousePointer2, TextCursorInput, Save, RefreshCw } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 
@@ -18,21 +18,29 @@ export const AccountView: React.FC = () => {
     showBubbleMenu,
     setShowBubbleMenu,
     autoSave,
-    setAutoSave
+    setAutoSave,
+    setAvatarSeed
   } = useAuth();
 
+  const randomizeAvatar = () => {
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let seed = '';
+    for (let i = 0; i < 8; i++) seed += chars.charAt(Math.floor(Math.random() * chars.length));
+    setAvatarSeed(seed);
+  };
+
   const SettingRow = ({ icon: Icon, label, description, children }: any) => (
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between py-4 font-sans gap-4">
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between py-4 font-sans gap-3 sm:gap-4 group">
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center text-neutral-500 shrink-0">
+        <div className="w-10 h-10 rounded-xl bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center text-neutral-500 shrink-0 group-hover:bg-blue-50 dark:group-hover:bg-blue-900/30 group-hover:text-blue-500 transition-colors">
           <Icon size={18} />
         </div>
         <div>
           <h4 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">{label}</h4>
-          <p className="text-xs text-neutral-500 max-w-[240px] leading-relaxed">{description}</p>
+          <p className="text-xs text-neutral-500 leading-relaxed max-w-[200px] sm:max-w-[240px]">{description}</p>
         </div>
       </div>
-      <div className="flex justify-end shrink-0">
+      <div className="flex justify-start sm:justify-end shrink-0 pl-[52px] sm:pl-0">
         {children}
       </div>
     </div>
@@ -46,21 +54,38 @@ export const AccountView: React.FC = () => {
           animate={{ opacity: 1, y: 0 }}
           className="flex flex-col gap-12"
         >
-          <header className="flex items-center gap-6 pb-8 border-b border-neutral-100 dark:border-neutral-800">
-            <UserAvatar 
-              photoURL={profile?.photoURL}
-              displayName={profile?.displayName}
-              avatarSeed={profile?.avatarSeed}
-              size={80}
-            />
-            <div>
-              <h1 className="text-3xl font-bold text-neutral-900 dark:text-white">
+          <header className="flex flex-col sm:flex-row items-center sm:items-start gap-6 pb-8 border-b border-neutral-100 dark:border-neutral-800 text-center sm:text-left">
+            <div className="relative group">
+              <UserAvatar 
+                photoURL={profile?.photoURL}
+                displayName={profile?.displayName}
+                avatarSeed={profile?.avatarSeed}
+                size={96}
+              />
+              <button 
+                onClick={randomizeAvatar}
+                className="absolute -bottom-2 -right-2 p-2 bg-white dark:bg-neutral-800 rounded-xl shadow-lg border border-neutral-200 dark:border-neutral-700 opacity-0 group-hover:opacity-100 transition-opacity hover:scale-110 active:scale-95"
+                title="Randomize Avatar"
+              >
+                <RefreshCw size={16} className="text-neutral-500" />
+              </button>
+            </div>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-3xl font-extrabold text-neutral-900 dark:text-white truncate">
                 {profile?.displayName || 'User Profile'}
               </h1>
-              <p className="text-neutral-500 flex items-center gap-2 mt-1">
-                {user?.isAnonymous ? 'Guest Account' : 'Verified Member'}
+              <div className="flex items-center justify-center sm:justify-start gap-2 mt-2">
+                <p className="text-sm text-neutral-500 font-medium">
+                  {user?.isAnonymous ? 'Guest Account' : 'Verified Member'}
+                </p>
                 {!user?.isAnonymous && <BadgeCheck size={16} className="text-blue-500 fill-current" />}
-              </p>
+              </div>
+              <button 
+                onClick={randomizeAvatar}
+                className="mt-4 text-xs font-bold text-blue-500 hover:text-blue-600 dark:text-blue-400 uppercase tracking-widest sm:hidden"
+              >
+                Change Avatar
+              </button>
             </div>
           </header>
 

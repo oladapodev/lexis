@@ -42,7 +42,7 @@ service cloud.firestore {
         && (!data.keys().hasAny(['showBubbleMenu']) || data.showBubbleMenu is bool)
         && (!data.keys().hasAny(['autoSave']) || data.autoSave is bool)
         && (!data.keys().hasAny(['createdAt']) || data.createdAt == request.time || (resource != null && data.createdAt == resource.data.createdAt))
-        && (!data.keys().hasAny(['updatedAt']) || data.updatedAt == request.time);
+        && (!data.keys().hasAny(['updatedAt']) || data.updatedAt == request.time || (resource != null && data.updatedAt == resource.data.updatedAt));
     }
 
     function isValidPage(data) {
@@ -55,28 +55,38 @@ service cloud.firestore {
         && (!data.keys().hasAny(['icon']) || (data.icon is string && data.icon.size() <= 10))
         && (!data.keys().hasAny(['coverImage']) || (data.coverImage is string && data.coverImage.size() <= 1000))
         && (!data.keys().hasAny(['createdAt']) || data.createdAt == request.time || (resource != null && data.createdAt == resource.data.createdAt))
-        && (!data.keys().hasAny(['updatedAt']) || data.updatedAt == request.time);
+        && (!data.keys().hasAny(['updatedAt']) || data.updatedAt == request.time || (resource != null && data.updatedAt == resource.data.updatedAt));
     }
 
     function isValidUpdate(data) {
       return data.keys().hasAll(['update', 'timestamp', 'userId', 'ownerId', 'isPublished'])
         && data.update is list && data.update.size() <= 1000000
-        && (data.timestamp == request.time || (resource != null && data.timestamp == resource.data.timestamp))
+        && (data.timestamp == request.time || data.timestamp == null || (resource != null && data.timestamp == resource.data.timestamp))
         && data.userId == request.auth.uid
         && data.ownerId is string
         && data.isPublished is bool
-        && (!data.keys().hasAny(['seq']) || data.seq is int || data.seq is float);
+        && (!data.keys().hasAny(['seq']) || data.seq is int || data.seq is float)
+        && (!data.keys().hasAny(['clientId']) || data.clientId is string);
+    }
+
+    function isValidVersion(data) {
+      return data.keys().hasAll(['content', 'timestamp', 'userId', 'userName'])
+        && data.content is list && data.content.size() <= 2000000
+        && (data.timestamp == request.time || data.timestamp == null)
+        && data.userId == request.auth.uid;
     }
 
     function isValidPresence(data) {
       return data.keys().hasAll(['uid', 'lastActive', 'ownerId', 'isPublished'])
         && data.uid == request.auth.uid
-        && data.lastActive == request.time
+        && (data.lastActive == request.time || (resource != null && data.lastActive == resource.data.lastActive))
         && data.ownerId is string
         && data.isPublished is bool
         && (!data.keys().hasAny(['displayName']) || data.displayName == null || (data.displayName is string && data.displayName.size() <= 100))
         && (!data.keys().hasAny(['photoURL']) || data.photoURL == null || (data.photoURL is string && data.photoURL.size() <= 1000))
-        && (!data.keys().hasAny(['cursorPos']) || data.cursorPos is int);
+        && (!data.keys().hasAny(['avatarSeed']) || data.avatarSeed == null || (data.avatarSeed is string && data.avatarSeed.size() <= 100))
+        && (!data.keys().hasAny(['cursorPos']) || data.cursorPos is int)
+        && (!data.keys().hasAny(['clientId']) || data.clientId is string);
     }
 
     // --- Collection Matches ---
@@ -118,7 +128,7 @@ service cloud.firestore {
 
       match /versions/{versionId} {
         allow read: if canAccessPage(pageId);
-        allow create: if isSignedIn() && isOwner(get(/databases/$(database)/documents/pages/$(pageId)).data.ownerId);
+        allow create: if isSignedIn() && isOwner(get(/databases/$(database)/documents/pages/$(pageId)).data.ownerId) && isValidVersion(incoming());
       }
     }
   }

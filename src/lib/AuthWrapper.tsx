@@ -31,6 +31,7 @@ interface AuthContextType {
   setShowBubbleMenu: (show: boolean) => void;
   autoSave: boolean;
   setAutoSave: (enabled: boolean) => void;
+  setAvatarSeed: (seed: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -44,6 +45,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [showFloatingMenu, setShowFloatingMenuState] = useState<boolean>(localStorage.getItem('showFloatingMenu') !== 'false');
   const [showBubbleMenu, setShowBubbleMenuState] = useState<boolean>(localStorage.getItem('showBubbleMenu') !== 'false');
   const [autoSave, setAutoSaveState] = useState<boolean>(localStorage.getItem('autoSave') !== 'false');
+
+  const setAvatarSeed = async (seed: string) => {
+    if (!user) return;
+    try {
+      await setDoc(doc(db, 'users', user.uid), { 
+        avatarSeed: seed,
+        updatedAt: serverTimestamp() 
+      }, { merge: true });
+      setProfile(prev => prev ? { ...prev, avatarSeed: seed } : null);
+      toast.success("Avatar updated");
+    } catch (e) {
+      console.error("Failed to update avatar:", e);
+      toast.error("Failed to update avatar");
+    }
+  };
 
   const applyTheme = (t: 'light' | 'dark' | 'system') => {
     const root = document.documentElement;
@@ -73,7 +89,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (user && !user.isAnonymous) {
       try {
-        await setDoc(doc(db, 'users', user.uid), { theme: t }, { merge: true });
+        await setDoc(doc(db, 'users', user.uid), { 
+          theme: t,
+          updatedAt: serverTimestamp() 
+        }, { merge: true });
       } catch (e) {
         console.error("Failed to save theme preference:", e);
       }
@@ -86,7 +105,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (user && !user.isAnonymous) {
       try {
-        await setDoc(doc(db, 'users', user.uid), { toolbarPosition: pos }, { merge: true });
+        await setDoc(doc(db, 'users', user.uid), { 
+          toolbarPosition: pos,
+          updatedAt: serverTimestamp() 
+        }, { merge: true });
       } catch (e) {
         console.error("Failed to save toolbar position preference:", e);
       }
@@ -97,7 +119,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setShowFloatingMenuState(show);
     localStorage.setItem('showFloatingMenu', String(show));
     if (user && !user.isAnonymous) {
-      await setDoc(doc(db, 'users', user.uid), { showFloatingMenu: show }, { merge: true }).catch(console.error);
+      await setDoc(doc(db, 'users', user.uid), { 
+        showFloatingMenu: show,
+        updatedAt: serverTimestamp() 
+      }, { merge: true }).catch(console.error);
     }
   };
 
@@ -105,7 +130,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setShowBubbleMenuState(show);
     localStorage.setItem('showBubbleMenu', String(show));
     if (user && !user.isAnonymous) {
-      await setDoc(doc(db, 'users', user.uid), { showBubbleMenu: show }, { merge: true }).catch(console.error);
+      await setDoc(doc(db, 'users', user.uid), { 
+        showBubbleMenu: show,
+        updatedAt: serverTimestamp() 
+      }, { merge: true }).catch(console.error);
     }
   };
 
@@ -113,7 +141,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAutoSaveState(enabled);
     localStorage.setItem('autoSave', String(enabled));
     if (user && !user.isAnonymous) {
-      await setDoc(doc(db, 'users', user.uid), { autoSave: enabled }, { merge: true }).catch(console.error);
+      await setDoc(doc(db, 'users', user.uid), { 
+        autoSave: enabled,
+        updatedAt: serverTimestamp() 
+      }, { merge: true }).catch(console.error);
     }
   };
 
@@ -149,6 +180,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } else {
           const profileData = snapshot.data() as UserProfile;
           setProfile(profileData);
+          
+          // Ensure every user has an avatar seed if they don't have a photoURL
+          if (!profileData.avatarSeed && !profileData.photoURL) {
+            const seed = getRandomAvatarSeed();
+            setDoc(userDoc, { avatarSeed: seed, updatedAt: serverTimestamp() }, { merge: true });
+            setProfile(p => p ? { ...p, avatarSeed: seed } : null);
+          }
+
           if (!localStorage.getItem('theme') && profileData.theme) {
             setThemeState(profileData.theme);
             applyTheme(profileData.theme);
@@ -196,7 +235,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       user, profile, loading, signIn, signInAnon, signOut, 
       theme, setTheme, toolbarPosition, setToolbarPosition,
       showFloatingMenu, setShowFloatingMenu, showBubbleMenu, setShowBubbleMenu,
-      autoSave, setAutoSave
+      autoSave, setAutoSave, setAvatarSeed
     }}>
       {children}
     </AuthContext.Provider>

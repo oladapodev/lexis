@@ -315,7 +315,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                  label={theme === 'dark' ? "Light Mode" : "Dark Mode"} 
                  onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} 
                />
-               {user && !user.isAnonymous && (
+               {user && (
                  <SidebarItem icon={<UserIcon size={16} />} label="Account" active={activeView === 'account'} onClick={() => onSelectView('account')} />
                )}
                {user ? (

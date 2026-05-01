@@ -21,7 +21,7 @@ function Dashboard() {
   const currentView = pageId ? 'editor' : 
                     location === '/account' ? 'account' : 'dashboard';
 
-  // Sonar Command Event Listeners
+  // Global Event Listeners
   useEffect(() => {
     const handleOpenSettings = () => navigate('/account');
     const handleNewPage = () => window.dispatchEvent(new CustomEvent('sidebar-new-page'));
@@ -83,7 +83,7 @@ function Dashboard() {
       
       <main className="flex-1 flex flex-col overflow-hidden relative min-w-0">
         {/* Navigation / Header */}
-        <header className="h-12 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between px-4 shrink-0 transition-colors bg-white/80 dark:bg-[#191919]/80 backdrop-blur-md z-40 shadow-sm relative">
+        <header className="h-12 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between px-4 shrink-0 transition-colors bg-white dark:bg-[#191919] z-40 relative">
           <div className="flex items-center gap-2 flex-1 min-w-0 mr-4 h-full">
             <AnimatePresence mode="wait">
               {isSidebarCollapsed && (
@@ -101,15 +101,24 @@ function Dashboard() {
               )}
             </AnimatePresence>
             
-            {currentView === 'editor' && toolbarPosition === 'top' && (
-              <div id="editor-toolbar-slot" className="flex flex-1 h-full min-w-0 overflow-x-auto no-scrollbar items-center" />
-            )}
+            <div className="flex items-center gap-2">
+              <Zap className="text-blue-500 fill-current" size={18} />
+            </div>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
             <div id="editor-actions-slot" className="flex items-center gap-2" />
           </div>
         </header>
+
+        {currentView === 'editor' && toolbarPosition === 'top' && (
+          <div className="relative h-10 border-b border-neutral-100 dark:border-neutral-800 bg-white dark:bg-[#191919] z-30 flex items-center">
+            <div className="flex-1 px-4 overflow-x-auto no-scrollbar scroll-smooth flex items-center">
+              <div id="editor-toolbar-slot" className="flex items-center min-w-max" />
+            </div>
+            <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white dark:from-[#191919] to-transparent z-10 pointer-events-none" />
+          </div>
+        )}
 
         {currentView === 'editor' && toolbarPosition === 'bottom' && (
           <div 
