@@ -23,9 +23,16 @@ function Dashboard() {
     const handleResize = () => {
       if (window.innerWidth < 768) setIsSidebarCollapsed(true);
     };
+    const handleCloseSidebar = () => {
+      if (window.innerWidth < 768) setIsSidebarCollapsed(true);
+    };
     window.addEventListener('resize', handleResize);
+    window.addEventListener('close-sidebar', handleCloseSidebar);
     handleResize();
-    return () => window.removeEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('close-sidebar', handleCloseSidebar);
+    };
   }, []);
 
   useEffect(() => {

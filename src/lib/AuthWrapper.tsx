@@ -1,5 +1,13 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signInAnonymously, User } from 'firebase/auth';
+import { 
+  onAuthStateChanged, 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  signInAnonymously, 
+  User,
+  setPersistence,
+  browserLocalPersistence
+} from 'firebase/auth';
 import { auth, db } from './firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { UserProfile } from '../types';
@@ -76,6 +84,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [theme]);
 
   useEffect(() => {
+    // Set persistence once on mount
+    setPersistence(auth, browserLocalPersistence).catch(err => {
+      console.error("Persistence failed:", err);
+    });
+
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       setUser(user);
       if (user) {
@@ -135,22 +148,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await signInAnonymously(auth);
     } catch (error) {
-      // Quietly fall back to local guest identity
-      const guestId = `guest_${Math.random().toString(36).substr(2, 9)}`;
-      const guestAvatarSeed = getRandomAvatarSeed();
-      setUser({
-        uid: guestId,
-        displayName: 'Guest',
-        isAnonymous: true,
-      } as any);
-      setProfile({
-        uid: guestId,
-        displayName: 'Guest',
-        email: null,
-        photoURL: null,
-        avatarSeed: guestAvatarSeed,
-        theme: 'system',
-      });
+      console.error('Anonymous sign-in error:', error);
       setLoading(false);
     }
   };

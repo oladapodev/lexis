@@ -23,6 +23,7 @@ import {
   Trash2,
   Clock,
   LogOut,
+  LogIn,
   User as UserIcon,
   Link2,
   Globe,
@@ -53,7 +54,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isCollapsed, 
   setIsCollapsed 
  }) => {
-  const { user, profile, signOut, theme, setTheme } = useAuth();
+  const { user, profile, signIn, signOut, theme, setTheme } = useAuth();
   const navigate = useNavigate();
   const [pages, setPages] = useState<PageMetadata[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -138,60 +139,69 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   return (
-    <motion.aside
-      initial={false}
-      animate={{ width: isCollapsed ? 0 : 260 }}
-      className={cn(
-        "relative h-screen bg-neutral-50/50 dark:bg-[#1f1f1f]/50 border-r border-neutral-200 dark:border-neutral-800 overflow-hidden flex flex-col group/sidebar transition-colors duration-300",
-        isCollapsed && "border-r-0"
-      )}
-    >
-      <div className="p-4 flex flex-col h-full gap-4">
+    <>
+      <AnimatePresence>
+        {!isCollapsed && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsCollapsed(true)}
+            className="fixed inset-0 bg-black/20 backdrop-blur-[2px] z-40 md:hidden"
+          />
+        )}
+      </AnimatePresence>
+
+      <motion.aside
+        initial={false}
+        animate={{ 
+          width: isCollapsed ? 0 : 260,
+          x: isCollapsed && window.innerWidth < 768 ? -260 : 0
+        }}
+        className={cn(
+          "fixed md:relative h-screen bg-[#f7f7f5] dark:bg-[#191919] border-r border-neutral-200 dark:border-neutral-800 overflow-hidden flex flex-col group/sidebar transition-colors duration-300 z-50",
+          isCollapsed && "border-r-0"
+        )}
+      >
+        <div className="p-4 flex flex-col h-full gap-4">
+          <div className="flex items-center justify-between px-1 mb-2">
+            {!isCollapsed && (
+              <div 
+                className="flex items-center gap-2 flex-1 cursor-pointer overflow-hidden p-1 rounded-lg hover:bg-neutral-200/50 dark:hover:bg-neutral-800/50 transition-colors"
+                onClick={() => !isEditingName && navigate('/dashboard')}
+              >
+                <UserAvatar 
+                  photoURL={profile?.photoURL || user?.photoURL}
+                  displayName={profile?.displayName || user?.displayName}
+                  avatarSeed={profile?.avatarSeed}
+                  size={24}
+                />
+                <div className="flex flex-col overflow-hidden">
+                  <span className="font-medium text-sm text-neutral-700 dark:text-neutral-300 truncate leading-none mb-0.5">
+                    {user ? (profile?.displayName || user?.displayName || 'Signed In') : 'Welcome'}
+                  </span>
+                  <span className="text-[10px] text-neutral-400 font-medium leading-none flex items-center gap-1">
+                    <div className={cn("w-1 h-1 rounded-full", user ? "bg-green-500" : "bg-neutral-300")} />
+                    {user ? (user.isAnonymous ? 'Guest session' : 'Authenticated') : 'Not signed in'}
+                  </span>
+                </div>
+              </div>
+            )}
+            
+            {!isCollapsed && (
+              <button 
+                onClick={() => setIsCollapsed(true)}
+                className="p-1.5 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-800 cursor-pointer text-neutral-400 shrink-0 transition-opacity ml-auto"
+                title="Collapse sidebar"
+              >
+                <ChevronLeft size={16} />
+              </button>
+            )}
+          </div>
+
         {!isCollapsed && (
           <>
             <div className="flex flex-col gap-2">
-              <div 
-                className="flex items-center gap-2 px-1 rounded-lg transition-colors group/header"
-              >
-                <div 
-                  className="flex items-center gap-2 flex-1 cursor-pointer overflow-hidden p-1.5 hover:bg-neutral-200/50 dark:hover:bg-neutral-800/50 rounded-lg"
-                  onClick={() => !isEditingName && navigate('/dashboard')}
-                >
-                  <UserAvatar 
-                    photoURL={profile?.photoURL}
-                    displayName={profile?.displayName}
-                    avatarSeed={profile?.avatarSeed}
-                    size={24}
-                  />
-                  {isEditingName ? (
-                    <input
-                      autoFocus
-                      className="bg-transparent border-none outline-none font-medium text-sm text-neutral-700 dark:text-neutral-300 w-full"
-                      value={workspaceName}
-                      onChange={(e) => setWorkspaceName(e.target.value)}
-                      onBlur={() => setIsEditingName(false)}
-                      onKeyDown={(e) => e.key === 'Enter' && setIsEditingName(false)}
-                    />
-                  ) : (
-                    <span 
-                      className="font-medium text-sm text-neutral-700 dark:text-neutral-300 truncate"
-                      onDoubleClick={() => setIsEditingName(true)}
-                      title="Double click to rename"
-                    >
-                      {workspaceName}
-                    </span>
-                  )}
-                </div>
-                
-                <button 
-                  onClick={() => setIsCollapsed(true)}
-                  className="p-1.5 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-800 cursor-pointer text-neutral-400 shrink-0 transition-opacity"
-                  title="Collapse sidebar"
-                >
-                  <ChevronLeft size={16} />
-                </button>
-              </div>
-
               {/* Tabs moved directly under name */}
               <div className="flex items-center p-0.5 bg-neutral-200/50 dark:bg-neutral-800/50 rounded-lg relative mx-2">
                 <button
@@ -300,16 +310,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
                    setTheme(theme === 'dark' ? 'light' : 'dark');
                  }} 
                />
-               <SidebarItem icon={<UserIcon size={16} />} label="Account" active={activeView === 'account'} onClick={() => onSelectView('account')} />
-               <SidebarItem icon={<LogOut size={16} />} label="Log out" onClick={() => {
-                 signOut();
-                 toast.success("Logged out successfully");
-               }} />
+               {user ? (
+                 <>
+                   <SidebarItem icon={<UserIcon size={16} />} label="Account" active={activeView === 'account'} onClick={() => onSelectView('account')} />
+                   <SidebarItem icon={<LogOut size={16} />} label="Log out" onClick={() => {
+                     signOut();
+                     toast.success("Logged out successfully");
+                   }} />
+                 </>
+               ) : (
+                 <SidebarItem icon={<LogIn size={16} />} label="Sign In" onClick={() => {
+                   signIn().then(() => toast.success("Signed in successfully")).catch(() => toast.error("Sign in failed"));
+                 }} />
+               )}
             </div>
           </>
         )}
       </div>
     </motion.aside>
+    </>
   );
 };
 

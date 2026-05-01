@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { useEditor, EditorContent, BubbleMenu, FloatingMenu, ReactRenderer } from '@tiptap/react';
+import { useEditor, EditorContent, BubbleMenu, FloatingMenu } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Collaboration from '@tiptap/extension-collaboration';
@@ -23,12 +23,13 @@ import { TextStyle } from '@tiptap/extension-text-style';
 import CharacterCount from '@tiptap/extension-character-count';
 import Dropcursor from '@tiptap/extension-dropcursor';
 import Focus from '@tiptap/extension-focus';
+import Gapcursor from '@tiptap/extension-gapcursor';
+import HardBreak from '@tiptap/extension-hard-break';
 import { common, createLowlight } from 'lowlight';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import BubbleMenuExtension from '@tiptap/extension-bubble-menu';
 import FloatingMenuExtension from '@tiptap/extension-floating-menu';
 import { Extension } from '@tiptap/core';
-import Suggestion from '@tiptap/suggestion';
 import * as Y from 'yjs';
 import { 
   doc, 
@@ -94,219 +95,10 @@ import { QRCodeSVG } from 'qrcode.react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
+import { Markdown } from 'tiptap-markdown';
 import tippy from 'tippy.js';
 
 const lowlight = createLowlight(common);
-
-// Command List Component for Slash Commands
-const CommandList = React.forwardRef((props: any, ref) => {
-  const [selectedIndex, setSelectedIndex] = useState(0);
-
-  const selectItem = (index: number) => {
-    const item = props.items[index];
-    if (item) {
-      props.command(item);
-    }
-  };
-
-  useEffect(() => {
-    setSelectedIndex(0);
-  }, [props.items]);
-
-  React.useImperativeHandle(ref, () => ({
-    onKeyDown: ({ event }: { event: KeyboardEvent }) => {
-      if (event.key === 'ArrowUp') {
-        setSelectedIndex((selectedIndex + props.items.length - 1) % props.items.length);
-        return true;
-      }
-      if (event.key === 'ArrowDown') {
-        setSelectedIndex((selectedIndex + 1) % props.items.length);
-        return true;
-      }
-      if (event.key === 'Enter') {
-        selectItem(selectedIndex);
-        return true;
-      }
-      return false;
-    },
-  }));
-
-  return (
-    <div className="bg-white dark:bg-[#1f1f1f] border border-neutral-200 dark:border-neutral-800 rounded-xl shadow-2xl overflow-hidden flex flex-col min-w-[280px] p-1.5 animate-in fade-in zoom-in duration-150">
-      {props.items.length ? (
-        props.items.map((item: any, index: number) => (
-          <button
-            key={index}
-            className={cn(
-              "flex items-center gap-3 px-3 py-2 text-left rounded-lg transition-all",
-              index === selectedIndex ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800/50"
-            )}
-            onClick={() => selectItem(index)}
-          >
-            <div className={cn(
-              "p-2 rounded-md",
-              index === selectedIndex ? "bg-white dark:bg-neutral-700 shadow-sm" : "bg-neutral-50 dark:bg-neutral-900"
-            )}>
-              {item.icon}
-            </div>
-            <div className="flex flex-col">
-              <span className="text-[13px] font-semibold">{item.title}</span>
-              <span className="text-[11px] opacity-60 leading-tight">{item.description}</span>
-            </div>
-          </button>
-        ))
-      ) : (
-        <div className="px-3 py-2 text-xs text-neutral-400">No results found</div>
-      )}
-    </div>
-  );
-});
-
-// Slash Command Extension
-const Commands = Extension.create({
-  name: 'commands',
-  addOptions() {
-    return {
-      suggestion: {
-        char: '/',
-        command: ({ editor, range, props }: any) => {
-          props.command({ editor, range });
-        },
-      },
-    };
-  },
-  addProseMirrorPlugins() {
-    return [
-      Suggestion({
-        editor: this.editor,
-        ...this.options.suggestion,
-      }),
-    ];
-  },
-});
-
-const getSuggestionItems = ({ query }: { query: string }) => {
-  return [
-    {
-      title: 'Heading 1',
-      description: 'Big section heading.',
-      icon: <Heading1 size={14} />,
-      command: ({ editor, range }: any) => {
-        editor.chain().focus().deleteRange(range).setNode('heading', { level: 1 }).run();
-      },
-    },
-    {
-      title: 'Heading 2',
-      description: 'Medium section heading.',
-      icon: <Heading2 size={14} />,
-      command: ({ editor, range }: any) => {
-        editor.chain().focus().deleteRange(range).setNode('heading', { level: 2 }).run();
-      },
-    },
-    {
-      title: 'Bullet List',
-      description: 'Create a simple bullet list.',
-      icon: <List size={14} />,
-      command: ({ editor, range }: any) => {
-        editor.chain().focus().deleteRange(range).toggleBulletList().run();
-      },
-    },
-    {
-      title: 'Task List',
-      description: 'Track tasks with checkboxes.',
-      icon: <CheckSquare size={14} />,
-      command: ({ editor, range }: any) => {
-        editor.chain().focus().deleteRange(range).toggleTaskList().run();
-      },
-    },
-    {
-      title: 'Quote',
-      description: 'Capture a quotation.',
-      icon: <Quote size={14} />,
-      command: ({ editor, range }: any) => {
-        editor.chain().focus().deleteRange(range).toggleBlockquote().run();
-      },
-    },
-    {
-      title: 'Code Block',
-      description: 'Code snippets with syntax highlighting.',
-      icon: <CodeIcon size={14} />,
-      command: ({ editor, range }: any) => {
-        editor.chain().focus().deleteRange(range).toggleCodeBlock().run();
-      },
-    },
-    {
-      title: 'Table',
-      description: 'Insert a 3x3 table.',
-      icon: <TableIcon size={14} />,
-      command: ({ editor, range }: any) => {
-        editor.chain().focus().deleteRange(range).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
-      },
-    },
-    {
-      title: 'Divider',
-      description: 'Insert a horizontal line.',
-      icon: <Minus size={14} />,
-      command: ({ editor, range }: any) => {
-        editor.chain().focus().deleteRange(range).setHorizontalRule().run();
-      },
-    },
-  ].filter(item => item.title.toLowerCase().startsWith(query.toLowerCase()));
-};
-
-const renderItems = () => {
-  let component: any;
-  let popup: any;
-
-  return {
-    onStart: (props: any) => {
-      component = new ReactRenderer(CommandList, {
-        props,
-        editor: props.editor,
-      });
-
-      if (!props.clientRect) {
-        return;
-      }
-
-      popup = tippy('body', {
-        getReferenceClientRect: props.clientRect,
-        appendTo: () => document.body,
-        content: component.element,
-        showOnCreate: true,
-        interactive: true,
-        trigger: 'manual',
-        placement: 'bottom-start',
-      });
-    },
-
-    onUpdate(props: any) {
-      component.updateProps(props);
-
-      if (!props.clientRect) {
-        return;
-      }
-
-      popup[0].setProps({
-        getReferenceClientRect: props.clientRect,
-      });
-    },
-
-    onKeyDown(props: any) {
-      if (props.event.key === 'Escape') {
-        popup[0].hide();
-        return true;
-      }
-
-      return component.ref?.onKeyDown(props);
-    },
-
-    onExit() {
-      popup[0].destroy();
-      component.destroy();
-    },
-  };
-};
 
 interface EditorProps {
   pageId: string;
@@ -355,9 +147,19 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
     extensions: [
       StarterKit.configure({
         codeBlock: false,
+        history: false,
+        dropCursor: {
+          color: '#3b82f6',
+          width: 2,
+        }
       } as any),
       Placeholder.configure({
-        placeholder: "Press '/' for commands...",
+        placeholder: "Start typing...",
+      }),
+      Markdown.configure({
+        html: false,
+        transformPastedText: true,
+        transformCopiedText: true,
       }),
       Collaboration.configure({
         document: ydoc,
@@ -373,11 +175,9 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
         className: 'has-focus',
         mode: 'all',
       }),
-      Dropcursor.configure({
-        color: '#3b82f6',
-        width: 2,
-      }),
       CharacterCount,
+      Gapcursor,
+      HardBreak,
       TaskList,
       TaskItem.configure({
         nested: true,
@@ -407,12 +207,6 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
       CodeBlockLowlight.configure({
         lowlight,
       }),
-      Commands.configure({
-        suggestion: {
-          items: getSuggestionItems,
-          render: renderItems,
-        },
-      }),
     ],
     onSelectionUpdate: ({ editor }) => {
       const pos = editor.state.selection.from;
@@ -429,13 +223,17 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
     return (pos: number) => {
       if (!pageId || pageId === 'null' || !user || !page) return;
         const presenceDoc = doc(db, `pages/${pageId}/presences`, user.uid);
+        const displayName = profile?.displayName || user.displayName || (user.isAnonymous ? 'Guest' : 'User');
         setDoc(presenceDoc, { 
           cursorPos: pos,
+          displayName,
+          photoURL: profile?.photoURL || user.photoURL,
           ownerId: page.ownerId,
-          isPublished: page.isPublished
+          isPublished: page.isPublished,
+          lastActive: serverTimestamp()
         }, { merge: true }).catch(() => {});
     };
-  }, [pageId, user, page]);
+  }, [pageId, user, page, profile]);
 
   const getCursorCoords = (pos: number) => {
     if (!editor || !editor.view) return null;
@@ -549,10 +347,11 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
     const updatePresence = async () => {
       if (!page) return;
       try {
+        const displayName = profile?.displayName || user.displayName || (user.isAnonymous ? 'Guest' : 'User');
         await setDoc(presenceDoc, {
           uid: user.uid,
-          displayName: profile?.displayName || 'Guest',
-          photoURL: profile?.photoURL,
+          displayName,
+          photoURL: profile?.photoURL || user.photoURL,
           avatarSeed: profile?.avatarSeed || null,
           lastActive: serverTimestamp(),
           ownerId: page.ownerId,
@@ -592,13 +391,19 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
       handleFirestoreError(error, OperationType.LIST, presencesPath);
     });
 
+    const handleBeforeUnload = () => {
+      deleteDoc(presenceDoc).catch(() => {});
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
     return () => {
       deleteDoc(presenceDoc).catch(() => {});
       clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
       unsubscribe();
     };
-  }, [pageId, user]);
+  }, [pageId, user, profile]);
 
   useEffect(() => {
     if (!pageId || pageId === 'null' || !user) return;
@@ -667,8 +472,21 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
     }
   };
 
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const container = e.currentTarget;
+    const progress = (container.scrollTop / (container.scrollHeight - container.clientHeight)) * 100;
+    setScrollProgress(progress);
+  };
+
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-white dark:bg-[#191919] transition-colors duration-300 overflow-hidden relative">
+    <div className="flex-1 h-full min-h-0 flex flex-col min-w-0 bg-white dark:bg-[#191919] transition-colors duration-300 overflow-hidden relative">
+      <div 
+        className="absolute top-0 left-0 h-0.5 bg-blue-500 z-[60] transition-all duration-150"
+        style={{ width: `${scrollProgress}%` }}
+      />
       <input 
         type="file" 
         ref={fileInputRef} 
@@ -909,13 +727,13 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
                 onClick={togglePublicStatus} 
                 className={cn(
                   "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-medium transition-colors h-full",
-                  page.isPublished 
+                  page?.isPublished 
                     ? "bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400" 
                     : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700 secondary-button"
                 )}
               >
-                {page.isPublished ? <Check size={10} /> : <AlertCircle size={10} />}
-                <span>{page.isPublished ? 'Public' : 'Private'}</span>
+                {page?.isPublished ? <Check size={10} /> : <AlertCircle size={10} />}
+                <span>{page?.isPublished ? 'Public' : 'Private'}</span>
               </button>
             )}
             <button 
@@ -930,8 +748,17 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
         document.getElementById('editor-actions-slot')!
       )}
 
-      <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col items-center pt-12 pb-32">
-        <div className="w-full max-w-3xl px-12 mt-4 relative z-10 min-h-full" ref={editorContainerRef}>
+      <div 
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        onClick={() => {
+          if (window.innerWidth < 768) {
+            window.dispatchEvent(new CustomEvent('close-sidebar'));
+          }
+        }}
+        className="flex-1 h-full overflow-y-auto custom-scrollbar flex flex-col items-center pt-12 pb-32"
+      >
+        <div className="w-full max-w-3xl px-12 mt-4 relative z-10" ref={editorContainerRef}>
         {/* Remote Cursors Overlay */}
         {presences.map(p => {
           if (p.cursorPos === undefined) return null;
@@ -951,12 +778,32 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
           );
         })}
 
-        <h1 contentEditable suppressContentEditableWarning onBlur={updateTitle} className="text-4xl font-bold text-neutral-900 dark:text-neutral-50 mb-8 focus:outline-none empty:before:content-['Untitled'] tracking-tight transition-colors duration-300">
-          {page?.title}
-        </h1>
+        <div className="flex items-center gap-4 mb-4">
+          <UserAvatar 
+            photoURL={page?.ownerId === user?.uid ? profile?.photoURL : null} 
+            displayName={page?.ownerId === user?.uid ? profile?.displayName : 'Page Owner'} 
+            avatarSeed={page?.ownerId === user?.uid ? profile?.avatarSeed : 'owner'}
+            size={48}
+            className="rounded-2xl shadow-sm border border-neutral-100 dark:border-neutral-800"
+          />
+          <div className="flex flex-col">
+            <span className="text-xs text-neutral-400 font-medium">Page Title</span>
+            <h1 contentEditable suppressContentEditableWarning onBlur={updateTitle} className="text-4xl font-bold text-neutral-900 dark:text-neutral-50 focus:outline-none empty:before:content-['Untitled'] tracking-tight transition-colors duration-300">
+              {page?.title}
+            </h1>
+          </div>
+        </div>
 
         {editor && (
-          <BubbleMenu editor={editor} tippyOptions={{ duration: 100 }}>
+          <BubbleMenu 
+            editor={editor} 
+            tippyOptions={{ duration: 100 }}
+            shouldShow={({ state }) => {
+              const { selection } = state;
+              const { empty } = selection;
+              return !empty;
+            }}
+          >
             <div className="flex items-center gap-0.5 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg shadow-xl p-1 animate-in fade-in zoom-in duration-200">
               <button onClick={() => editor.chain().focus().toggleBold().run()} className={cn("p-1.5 rounded", editor.isActive('bold') ? "bg-neutral-100 dark:bg-neutral-800" : "hover:bg-neutral-50 dark:hover:bg-neutral-800")}>
                 <Bold size={14} />
@@ -973,6 +820,22 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
               </button>
               <button onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} className={cn("p-1.5 rounded", editor.isActive('heading', { level: 2 }) ? "bg-neutral-100 dark:bg-neutral-800" : "hover:bg-neutral-50 dark:hover:bg-neutral-800")}>
                 <Heading2 size={14} />
+              </button>
+              <div className="w-px h-4 bg-neutral-200 dark:bg-neutral-800 mx-1" />
+              <button onClick={() => editor.chain().focus().setColor('#9333ea').run()} className="p-1.5 rounded hover:bg-neutral-50 dark:hover:bg-neutral-800" title="Purple">
+                <div className="w-3 h-3 rounded-full bg-purple-500" />
+              </button>
+              <button onClick={() => editor.chain().focus().setColor('#ef4444').run()} className="p-1.5 rounded hover:bg-neutral-50 dark:hover:bg-neutral-800" title="Red">
+                <div className="w-3 h-3 rounded-full bg-red-500" />
+              </button>
+              <button onClick={() => editor.chain().focus().setColor('#3b82f6').run()} className="p-1.5 rounded hover:bg-neutral-50 dark:hover:bg-neutral-800" title="Blue">
+                <div className="w-3 h-3 rounded-full bg-blue-500" />
+              </button>
+              <button onClick={() => editor.chain().focus().setColor('#16a34a').run()} className="p-1.5 rounded hover:bg-neutral-50 dark:hover:bg-neutral-800" title="Green">
+                <div className="w-3 h-3 rounded-full bg-green-600" />
+              </button>
+              <button onClick={() => editor.chain().focus().unsetColor().run()} className="p-1.5 rounded hover:bg-neutral-50 dark:hover:bg-neutral-800" title="Clear Color">
+                <X size={14} className="opacity-50" />
               </button>
             </div>
           </BubbleMenu>
