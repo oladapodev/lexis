@@ -159,103 +159,107 @@ export const Sidebar: React.FC<SidebarProps> = ({
           x: isCollapsed && window.innerWidth < 768 ? -260 : 0
         }}
         className={cn(
-          "fixed md:relative h-screen bg-[#f7f7f5] dark:bg-[#191919] border-r border-neutral-200 dark:border-neutral-800 overflow-hidden flex flex-col group/sidebar transition-colors duration-300 z-50",
+          "fixed md:relative h-screen bg-[#f7f7f5] dark:bg-[#191919] border-r border-neutral-200 dark:border-neutral-800 overflow-hidden flex flex-col group/sidebar transition-colors duration-300 z-[100]",
           isCollapsed && "border-r-0"
         )}
       >
-        <div className="p-4 flex flex-col h-full gap-4">
-          <div className="flex items-center justify-between px-1 mb-2">
+        <div className="flex flex-col h-full overflow-hidden">
+          {/* Header */}
+          <div className="pt-2 p-4 flex flex-col gap-4 shrink-0">
+            <div className="flex items-center justify-between px-1 mb-2">
+              {!isCollapsed && (
+                <div 
+                  className="flex items-center gap-2 flex-1 cursor-pointer overflow-hidden p-1 rounded-lg hover:bg-neutral-200/50 dark:hover:bg-neutral-800/50 transition-colors"
+                  onClick={() => navigate('/dashboard')}
+                >
+                  <UserAvatar 
+                    photoURL={profile?.photoURL || user?.photoURL}
+                    displayName={profile?.displayName || user?.displayName}
+                    avatarSeed={profile?.avatarSeed}
+                    size={24}
+                  />
+                  <div className="flex flex-col overflow-hidden">
+                    <span className="font-medium text-sm text-neutral-700 dark:text-neutral-300 truncate leading-none mb-0.5">
+                      {user ? (profile?.displayName || user?.displayName || 'Signed In') : 'Welcome'}
+                    </span>
+                    <span className="text-[10px] text-neutral-400 font-medium leading-none flex items-center gap-1">
+                      <div className={cn("w-1 h-1 rounded-full", user ? "bg-green-500" : "bg-neutral-300")} />
+                      {user ? (user.isAnonymous ? 'Guest session' : 'Authenticated') : 'Not signed in'}
+                    </span>
+                  </div>
+                </div>
+              )}
+              
+              {!isCollapsed && (
+                <button 
+                  onClick={() => setIsCollapsed(true)}
+                  className="p-1.5 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-800 cursor-pointer text-neutral-400 shrink-0 transition-opacity ml-auto"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+              )}
+            </div>
+
             {!isCollapsed && (
-              <div 
-                className="flex items-center gap-2 flex-1 cursor-pointer overflow-hidden p-1 rounded-lg hover:bg-neutral-200/50 dark:hover:bg-neutral-800/50 transition-colors"
-                onClick={() => !isEditingName && navigate('/dashboard')}
-              >
-                <UserAvatar 
-                  photoURL={profile?.photoURL || user?.photoURL}
-                  displayName={profile?.displayName || user?.displayName}
-                  avatarSeed={profile?.avatarSeed}
-                  size={24}
-                />
-                <div className="flex flex-col overflow-hidden">
-                  <span className="font-medium text-sm text-neutral-700 dark:text-neutral-300 truncate leading-none mb-0.5">
-                    {user ? (profile?.displayName || user?.displayName || 'Signed In') : 'Welcome'}
-                  </span>
-                  <span className="text-[10px] text-neutral-400 font-medium leading-none flex items-center gap-1">
-                    <div className={cn("w-1 h-1 rounded-full", user ? "bg-green-500" : "bg-neutral-300")} />
-                    {user ? (user.isAnonymous ? 'Guest session' : 'Authenticated') : 'Not signed in'}
-                  </span>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center p-0.5 bg-neutral-200/50 dark:bg-neutral-800/50 rounded-lg relative">
+                  <button
+                    onClick={() => setActiveTab('private')}
+                    className={cn(
+                      "flex-1 flex items-center justify-center gap-2 py-1 px-2 text-[11px] font-medium rounded-md transition-all relative z-10",
+                      activeTab === 'private' ? "text-neutral-900 dark:text-white" : "text-neutral-500"
+                    )}
+                  >
+                    <Lock size={12} />
+                    Private
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('public')}
+                    className={cn(
+                      "flex-1 flex items-center justify-center gap-2 py-1 px-2 text-[11px] font-medium rounded-md transition-all relative z-10",
+                      activeTab === 'public' ? "text-neutral-900 dark:text-white" : "text-neutral-500"
+                    )}
+                  >
+                    <Globe size={12} />
+                    Public
+                  </button>
+                  <motion.div
+                    layoutId="sidebar-tab-indicator"
+                    className="absolute inset-0.5 w-[calc(50%-2px)] bg-white dark:bg-neutral-700 rounded-md shadow-sm pointer-events-none"
+                    initial={false}
+                    animate={{ x: activeTab === 'private' ? 0 : '100%' }}
+                    transition={{ type: 'spring', bounce: 0.2, duration: 0.4 }}
+                  />
+                </div>
+
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" size={14} />
+                  <input 
+                    type="text"
+                    placeholder="Search notes..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full bg-neutral-100 dark:bg-neutral-800/50 border-none rounded-lg py-1.5 pl-8 pr-3 text-xs focus:ring-1 focus:ring-neutral-200 dark:focus:ring-neutral-700 transition-all outline-none text-neutral-600 dark:text-neutral-300 placeholder:text-neutral-400 dark:placeholder:text-neutral-600"
+                  />
                 </div>
               </div>
             )}
-            
-            {!isCollapsed && (
-              <button 
-                onClick={() => setIsCollapsed(true)}
-                className="p-1.5 rounded-md hover:bg-neutral-200 dark:hover:bg-neutral-800 cursor-pointer text-neutral-400 shrink-0 transition-opacity ml-auto"
-                title="Collapse sidebar"
-              >
-                <ChevronLeft size={16} />
-              </button>
-            )}
           </div>
 
-        {!isCollapsed && (
-          <>
-            <div className="flex flex-col gap-2">
-              {/* Tabs moved directly under name */}
-              <div className="flex items-center p-0.5 bg-neutral-200/50 dark:bg-neutral-800/50 rounded-lg relative mx-2">
-                <button
-                  onClick={() => setActiveTab('private')}
-                  className={cn(
-                    "flex-1 flex items-center justify-center gap-2 py-1 px-2 text-[11px] font-medium rounded-md transition-all relative z-10",
-                    activeTab === 'private' ? "text-neutral-900 dark:text-white" : "text-neutral-500"
-                  )}
-                >
-                  <Lock size={12} />
-                  Private
-                </button>
-                <button
-                  onClick={() => setActiveTab('public')}
-                  className={cn(
-                    "flex-1 flex items-center justify-center gap-2 py-1 px-2 text-[11px] font-medium rounded-md transition-all relative z-10",
-                    activeTab === 'public' ? "text-neutral-900 dark:text-white" : "text-neutral-500"
-                  )}
-                >
-                  <Globe size={12} />
-                  Public
-                </button>
-                <motion.div
-                  layoutId="sidebar-tab-indicator"
-                  className="absolute inset-0.5 w-[calc(50%-2px)] bg-white dark:bg-neutral-700 rounded-md shadow-sm pointer-events-none"
-                  initial={false}
-                  animate={{ x: activeTab === 'private' ? 0 : '100%' }}
-                  transition={{ type: 'spring', bounce: 0.2, duration: 0.4 }}
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-col mt-4">
-              <div className="relative px-2 mb-4">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400" size={14} />
-                <input 
-                  type="text"
-                  placeholder="Search notes..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full bg-neutral-100 dark:bg-neutral-800/50 border-none rounded-lg py-1.5 pl-8 pr-3 text-xs focus:ring-1 focus:ring-neutral-200 dark:focus:ring-neutral-700 transition-all outline-none text-neutral-600 dark:text-neutral-300 placeholder:text-neutral-400 dark:placeholder:text-neutral-600"
-                />
-              </div>
-
+          {/* Note List */}
+          {!isCollapsed && (
+            <div className="flex-1 overflow-y-auto custom-scrollbar px-2 mb-2">
               <div className="px-2 py-1 mb-1 text-[11px] font-semibold text-neutral-400 dark:text-neutral-600 uppercase tracking-wider flex items-center justify-between group">
                 Notes
-                <Plus 
-                  size={14} 
-                  className="cursor-pointer hover:text-neutral-600 dark:hover:text-neutral-400 opacity-0 group-hover:opacity-100 transition-opacity" 
+                <button 
                   onClick={createPage}
-                />
+                  className="p-1 rounded hover:bg-neutral-200 dark:hover:bg-neutral-800 text-neutral-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <Plus size={14} />
+                </button>
               </div>
 
-              <div className="flex flex-col gap-0.5 max-h-[60vh] overflow-y-auto custom-scrollbar overflow-x-hidden p-0.5">
+              <div className="flex flex-col gap-0.5">
                 <AnimatePresence mode="popLayout" initial={false}>
                   {filteredPages.length > 0 ? filteredPages.map(page => (
                     <motion.div 
@@ -273,7 +277,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         active={activePageId === page.id}
                         onClick={() => onSelectPage(page.id)}
                       />
-                      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity bg-neutral-100/80 dark:bg-neutral-800/80 p-0.5 rounded backdrop-blur">
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity bg-neutral-100 dark:bg-neutral-800 p-0.5 rounded shadow-sm">
                         <button 
                            onClick={(e) => { e.stopPropagation(); copyPageLink(page.id); }}
                            className="p-1 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-400"
@@ -301,33 +305,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </AnimatePresence>
               </div>
             </div>
+          )}
 
-            <div className="mt-auto flex flex-col gap-0.5 pt-4 border-t border-neutral-100 dark:border-neutral-800">
+          {/* Footer */}
+          {!isCollapsed && (
+            <div className="mt-auto border-t border-neutral-200 dark:border-neutral-800 p-4 shrink-0 flex flex-col gap-1">
                <SidebarItem 
                  icon={theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />} 
                  label={theme === 'dark' ? "Light Mode" : "Dark Mode"} 
-                 onClick={() => {
-                   setTheme(theme === 'dark' ? 'light' : 'dark');
-                 }} 
+                 onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} 
                />
+               {user && !user.isAnonymous && (
+                 <SidebarItem icon={<UserIcon size={16} />} label="Account" active={activeView === 'account'} onClick={() => onSelectView('account')} />
+               )}
                {user ? (
-                 <>
-                   <SidebarItem icon={<UserIcon size={16} />} label="Account" active={activeView === 'account'} onClick={() => onSelectView('account')} />
-                   <SidebarItem icon={<LogOut size={16} />} label="Log out" onClick={() => {
-                     signOut();
-                     toast.success("Logged out successfully");
-                   }} />
-                 </>
+                 <SidebarItem icon={<LogOut size={16} />} label="Log out" onClick={() => {
+                   signOut();
+                   toast.success("Logged out successfully");
+                   navigate('/');
+                 }} />
                ) : (
                  <SidebarItem icon={<LogIn size={16} />} label="Sign In" onClick={() => {
                    signIn().then(() => toast.success("Signed in successfully")).catch(() => toast.error("Sign in failed"));
                  }} />
                )}
             </div>
-          </>
-        )}
-      </div>
-    </motion.aside>
+          )}
+        </div>
+      </motion.aside>
     </>
   );
 };

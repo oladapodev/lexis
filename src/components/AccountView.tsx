@@ -1,25 +1,40 @@
 import React from 'react';
 import { useAuth } from '../lib/AuthWrapper';
 import { UserAvatar } from './UserAvatar';
-import { Mail, Shield, User as UserIcon, Calendar, BadgeCheck, Sun, Moon, Monitor, Bell, Eye, Database } from 'lucide-react';
+import { Mail, Shield, User as UserIcon, Calendar, BadgeCheck, Sun, Moon, Monitor, Bell, Eye, Database, MousePointer2, TextCursorInput, Save } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 
 export const AccountView: React.FC = () => {
-  const { user, profile, theme, setTheme } = useAuth();
+  const { 
+    user, 
+    profile, 
+    theme, 
+    setTheme, 
+    toolbarPosition, 
+    setToolbarPosition,
+    showFloatingMenu,
+    setShowFloatingMenu,
+    showBubbleMenu,
+    setShowBubbleMenu,
+    autoSave,
+    setAutoSave
+  } = useAuth();
 
   const SettingRow = ({ icon: Icon, label, description, children }: any) => (
-    <div className="flex items-center justify-between py-4 font-sans">
-      <div className="flex gap-4">
-        <div className="w-10 h-10 rounded-lg bg-neutral-100 dark:bg-neutral-900 flex items-center justify-center text-neutral-500 shrink-0">
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between py-4 font-sans gap-4">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center text-neutral-500 shrink-0">
           <Icon size={18} />
         </div>
         <div>
-          <h3 className="text-sm font-medium text-neutral-900 dark:text-white">{label}</h3>
-          <p className="text-xs text-neutral-500">{description}</p>
+          <h4 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">{label}</h4>
+          <p className="text-xs text-neutral-500 max-w-[240px] leading-relaxed">{description}</p>
         </div>
       </div>
-      <div>{children}</div>
+      <div className="flex justify-end shrink-0">
+        {children}
+      </div>
     </div>
   );
 
@@ -118,6 +133,101 @@ export const AccountView: React.FC = () => {
                       <Monitor size={12} /> System
                     </button>
                   </div>
+                </SettingRow>
+
+                <div className="h-px bg-neutral-100 dark:bg-neutral-800" />
+
+                <SettingRow 
+                  icon={BadgeCheck} 
+                  label="Toolbar Position" 
+                  description="Move the editor toolbar to the top or bottom."
+                >
+                  <div className="flex bg-neutral-100 dark:bg-neutral-800 p-1 rounded-lg">
+                    <button 
+                      onClick={() => setToolbarPosition('top')}
+                      className={cn(
+                        "px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all",
+                        toolbarPosition === 'top' ? "bg-white dark:bg-neutral-700 text-black dark:text-white shadow-sm" : "text-neutral-500"
+                      )}
+                    >
+                      Top
+                    </button>
+                    <button 
+                      onClick={() => setToolbarPosition('bottom')}
+                      className={cn(
+                        "px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all",
+                        toolbarPosition === 'bottom' ? "bg-white dark:bg-neutral-700 text-black dark:text-white shadow-sm" : "text-neutral-500"
+                      )}
+                    >
+                      Bottom
+                    </button>
+                  </div>
+                </SettingRow>
+
+                <div className="h-px bg-neutral-100 dark:bg-neutral-800" />
+
+                <SettingRow 
+                  icon={Save} 
+                  label="Auto-Save" 
+                  description="Changes are synced instantly. Turn off to sync manually."
+                >
+                  <button 
+                    onClick={() => setAutoSave(!autoSave)}
+                    className={cn(
+                      "w-10 h-5 rounded-full transition-colors relative",
+                      autoSave ? "bg-black dark:bg-white" : "bg-neutral-200 dark:bg-neutral-800"
+                    )}
+                  >
+                    <motion.div 
+                      animate={{ x: autoSave ? 20 : 2 }}
+                      initial={false}
+                      className="absolute top-1 w-3 h-3 rounded-full bg-white dark:bg-black shadow-sm"
+                    />
+                  </button>
+                </SettingRow>
+
+                <div className="h-px bg-neutral-100 dark:bg-neutral-800" />
+
+                <SettingRow 
+                  icon={MousePointer2} 
+                  label="Floating Menu" 
+                  description="Show menu when hovering over an empty line."
+                >
+                  <button 
+                    onClick={() => setShowFloatingMenu(!showFloatingMenu)}
+                    className={cn(
+                      "w-10 h-5 rounded-full transition-colors relative",
+                      showFloatingMenu ? "bg-black dark:bg-white" : "bg-neutral-200 dark:bg-neutral-800"
+                    )}
+                  >
+                    <motion.div 
+                      animate={{ x: showFloatingMenu ? 20 : 2 }}
+                      initial={false}
+                      className="absolute top-1 w-3 h-3 rounded-full bg-white dark:bg-black shadow-sm"
+                    />
+                  </button>
+                </SettingRow>
+
+                <div className="h-px bg-neutral-100 dark:bg-neutral-800" />
+
+                <SettingRow 
+                  icon={TextCursorInput} 
+                  label="Bubble Menu" 
+                  description="Show menu when text is selected."
+                >
+                  <button 
+                    onClick={() => setShowBubbleMenu(!showBubbleMenu)}
+                    className={cn(
+                      "w-10 h-5 rounded-full transition-colors relative",
+                      showBubbleMenu ? "bg-black dark:bg-white" : "bg-neutral-200 dark:bg-neutral-800"
+                    )}
+                  >
+                    <motion.div 
+                      animate={{ x: showBubbleMenu ? 20 : 2 }}
+                      initial={false}
+                      className="absolute top-1 w-3 h-3 rounded-full bg-white dark:bg-black shadow-sm"
+                    />
+                  </button>
                 </SettingRow>
 
                 <div className="h-px bg-neutral-100 dark:bg-neutral-800" />

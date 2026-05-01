@@ -188,5 +188,10 @@
   .custom-scrollbar-hidden::-webkit-scrollbar {
     display: none;
   }
+
+  .sonar-toast {
+    @apply !border-green-500/50 !bg-green-50/90 dark:!bg-green-900/20 backdrop-blur-md shadow-[0_0_20px_rgba(34,197,94,0.1)];
+    @apply !font-sans !font-medium !text-green-800 dark:!text-green-300;
+  }
 }
 

@@ -9,8 +9,10 @@ import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { Toaster, toast } from 'sonner';
 
+import { CommandPalette } from './components/CommandPalette';
+
 function Dashboard() {
-  const { user, signInAnon, theme, setTheme } = useAuth();
+  const { user, signInAnon, theme, setTheme, toolbarPosition } = useAuth();
   const { pageId } = useParams();
   const navigate = useNavigate();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -18,6 +20,23 @@ function Dashboard() {
 
   const currentView = pageId ? 'editor' : 
                     location === '/account' ? 'account' : 'dashboard';
+
+  // Sonar Command Event Listeners
+  useEffect(() => {
+    const handleOpenSettings = () => navigate('/account');
+    const handleNewPage = () => window.dispatchEvent(new CustomEvent('sidebar-new-page'));
+    const handleOpenHistory = () => window.dispatchEvent(new CustomEvent('editor-open-history'));
+
+    window.addEventListener('open-settings', handleOpenSettings);
+    window.addEventListener('new-page', handleNewPage);
+    window.addEventListener('open-history', handleOpenHistory);
+
+    return () => {
+      window.removeEventListener('open-settings', handleOpenSettings);
+      window.removeEventListener('new-page', handleNewPage);
+      window.removeEventListener('open-history', handleOpenHistory);
+    };
+  }, [navigate]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -45,6 +64,7 @@ function Dashboard() {
 
   return (
     <div className="h-screen flex overflow-hidden bg-white dark:bg-[#191919] text-neutral-900 dark:text-neutral-100 font-sans transition-colors duration-300">
+      <CommandPalette />
       <Toaster 
         position="bottom-center" 
         theme={document.documentElement.classList.contains('dark') ? 'dark' : 'light'}
@@ -61,9 +81,9 @@ function Dashboard() {
         setIsCollapsed={setIsSidebarCollapsed}
       />
       
-      <main className="flex-1 flex flex-col overflow-hidden relative">
+      <main className="flex-1 flex flex-col overflow-hidden relative min-w-0">
         {/* Navigation / Header */}
-        <header className="h-12 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between px-4 shrink-0 transition-colors bg-white/80 dark:bg-[#191919]/80 backdrop-blur-md z-50 shadow-sm">
+        <header className="h-12 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between px-4 shrink-0 transition-colors bg-white/80 dark:bg-[#191919]/80 backdrop-blur-md z-40 shadow-sm relative">
           <div className="flex items-center gap-2 flex-1 min-w-0 mr-4 h-full">
             <AnimatePresence mode="wait">
               {isSidebarCollapsed && (
@@ -81,8 +101,8 @@ function Dashboard() {
               )}
             </AnimatePresence>
             
-            {currentView === 'editor' && (
-              <div id="editor-toolbar-slot" className="flex-1 h-full min-w-0 overflow-x-auto no-scrollbar flex items-center" />
+            {currentView === 'editor' && toolbarPosition === 'top' && (
+              <div id="editor-toolbar-slot" className="flex flex-1 h-full min-w-0 overflow-x-auto no-scrollbar items-center" />
             )}
           </div>
 
@@ -90,6 +110,16 @@ function Dashboard() {
             <div id="editor-actions-slot" className="flex items-center gap-2" />
           </div>
         </header>
+
+        {currentView === 'editor' && toolbarPosition === 'bottom' && (
+          <div 
+            id="editor-toolbar-slot-bottom" 
+            className={cn(
+              "fixed bottom-0 right-0 left-0 transition-all bg-white dark:bg-[#191919] border-t border-neutral-100 dark:border-neutral-800 h-14 z-[45] px-4 overflow-x-auto no-scrollbar flex items-center shadow-[0_-4px_10px_rgba(0,0,0,0.05)]",
+              !isSidebarCollapsed ? "md:left-[260px]" : "md:left-0"
+            )}
+          />
+        )}
 
         <AnimatePresence mode="wait">
           {currentView === 'editor' && pageId ? (

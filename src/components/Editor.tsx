@@ -86,7 +86,10 @@ import {
   AlignLeft,
   AlignCenter,
   AlignRight,
-  AlignJustify
+  AlignJustify,
+  History,
+  RotateCcw,
+  Save
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserAvatar } from './UserAvatar';
@@ -129,16 +132,28 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
     );
   }
 
-  const { user, profile } = useAuth();
+  const { user, profile, toolbarPosition, showFloatingMenu, showBubbleMenu, autoSave } = useAuth();
   const [page, setPage] = useState<PageMetadata | null>(null);
   const [loading, setLoading] = useState(true);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('saved');
   const [presences, setPresences] = useState<Presence[]>([]);
   const [copied, setCopied] = useState(false);
   const [showQRCode, setShowQRCode] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [versions, setVersions] = useState<any[]>([]);
+  const [isSavingVersion, setIsSavingVersion] = useState(false);
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const deletedRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const triggerManualSave = () => {
+    if (saveStatus === 'saved') {
+      toast.info("No new changes to sync.");
+      return;
+    }
+    window.dispatchEvent(new CustomEvent('sonar-force-sync'));
+  };
 
   // Yjs Initialization
   const ydoc = useMemo(() => new Y.Doc(), [pageId]);
@@ -148,6 +163,8 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
       StarterKit.configure({
         codeBlock: false,
         history: false,
+        gapcursor: false,
+        hardBreak: false,
         dropCursor: {
           color: '#3b82f6',
           width: 2,
@@ -176,8 +193,6 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
         mode: 'all',
       }),
       CharacterCount,
-      Gapcursor,
-      HardBreak,
       TaskList,
       TaskItem.configure({
         nested: true,
@@ -253,10 +268,14 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
 
     // Sync Content via Yjs-Firestore Update Buffer
     useEffect(() => {
-      if (!pageId || pageId === 'null' || pageId === '' || !user || !page) {
-        if (!pageId || pageId === 'null' || pageId === '') setLoading(false);
+      if (!pageId || pageId === 'null' || pageId === '') {
+        setLoading(false);
         return;
       }
+
+      // We need either metadata or a user to even know if we can sync
+      // But we can start the metadata subscription regardless
+      if (!page && !user) return; 
 
       const updatesCollection = collection(db, `pages/${pageId}/updates`);
       setLoading(true);
@@ -266,32 +285,52 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
       let timeout: any = null;
 
       const pushBuffer = () => {
-        if (updateBuffer.length === 0 || !page) return;
+        if (!user || updateBuffer.length === 0 || !page) return;
+        setSaveStatus('saving');
         const merged = Y.mergeUpdates(updateBuffer);
         updateBuffer = [];
         
+        const startTime = Date.now();
         addDoc(updatesCollection, {
-          update: Array.from(merged), // Store as array of numbers for Firestore compatibility
+          update: Array.from(merged),
           timestamp: serverTimestamp(),
-          seq: Date.now(), // Tie-breaker for ordering
+          seq: Date.now(),
           userId: user.uid,
           ownerId: page.ownerId,
           isPublished: page.isPublished
+        }).then(() => {
+          const elapsed = Date.now() - startTime;
+          const remaining = Math.max(0, 800 - elapsed);
+          
+          setTimeout(() => {
+            setSaveStatus('saved');
+            toast.success("Sonar sync successful", {
+              description: "Changes pushed to shared workspace",
+              duration: 2000,
+              className: "sonar-toast",
+              icon: <Check size={14} className="text-green-500" />
+            });
+          }, remaining);
         }).catch(err => {
           console.error("Failed to push update", err);
+          setSaveStatus('idle');
+          toast.error("Sonar sync failed", {
+            description: "Permissions restricted or network error"
+          });
         });
       };
 
-      // Local -> Remote: Push local updates to Firestore
+      // Local -> Remote: Push local updates to Firestore (only if logged in)
       const handleUpdate = (update: Uint8Array, origin: any) => {
-        if (origin === 'remote') return;
+        if (origin === 'remote' || !user) return;
         
+        setSaveStatus('idle');
         updateBuffer.push(update);
         if (!timeout) {
           timeout = setTimeout(() => {
             pushBuffer();
             timeout = null;
-          }, 50); // 50ms batching for smoother real-time typing
+          }, 50);
         }
       };
       ydoc.on('update', handleUpdate);
@@ -316,7 +355,7 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
           docChanges.forEach(change => {
             if (change.type === 'added') {
               const data = change.doc.data();
-              if (data.userId !== user.uid) {
+              if (!user || data.userId !== user.uid) {
                 const updateArr = data.update instanceof Uint8Array 
                   ? data.update 
                   : new Uint8Array(data.update); 
@@ -328,16 +367,25 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
         
         if (loading) setLoading(false);
       }, (error) => {
-        handleFirestoreError(error, OperationType.LIST, updatesPath);
+        // If it's a public page, don't show full error to guests
+        if (!user && error.message.includes('permission')) {
+          console.warn("Read-only access for guest");
+        } else {
+           handleFirestoreError(error, OperationType.LIST, updatesPath);
+        }
         setLoading(false);
       });
 
+      const handleForceSync = () => pushBuffer();
+      window.addEventListener('sonar-force-sync', handleForceSync);
+
       return () => {
         ydoc.off('update', handleUpdate);
+        window.removeEventListener('sonar-force-sync', handleForceSync);
         if (timeout) clearTimeout(timeout);
         unsubscribe();
       };
-    }, [pageId, ydoc, user]);
+    }, [pageId, ydoc, user, page]);
 
   // Presence Tracking
   useEffect(() => {
@@ -406,10 +454,18 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
   }, [pageId, user, profile]);
 
   useEffect(() => {
-    if (!pageId || pageId === 'null' || !user) return;
+    if (!pageId || pageId === 'null') return;
     const unsub = onSnapshot(doc(db, 'pages', pageId), (s) => {
       if (s.exists()) {
         const data = s.data() as PageMetadata;
+        
+        // If not owner and not published, redirect
+        if (user && data.ownerId !== user.uid && !data.isPublished) {
+          toast.error("You don't have permission to view this page.");
+          navigate('/dashboard');
+          return;
+        }
+
         if (data.isArchived && !deletedRef.current) {
           deletedRef.current = true;
           toast.error("This page has been archived.");
@@ -418,12 +474,19 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
         }
         setPage({ id: s.id, ...data } as PageMetadata);
       } else if (!deletedRef.current) {
-        deletedRef.current = true;
-        toast.error("This page was deleted by the owner.");
-        navigate('/dashboard');
+        // Only error if we actually had a reason to expect it existed
+        if (user || pageId.length > 5) {
+          deletedRef.current = true;
+          toast.error("This page was not found or was deleted.");
+          navigate('/dashboard');
+        }
       }
     }, (error) => {
-      handleFirestoreError(error, OperationType.GET, `pages/${pageId}`);
+      if (!user && error.message.includes('permission')) {
+        console.warn("Guest access restricted by rules");
+      } else {
+        handleFirestoreError(error, OperationType.GET, `pages/${pageId}`);
+      }
     });
     return () => unsub();
   }, [pageId, user]);
@@ -459,6 +522,65 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const saveVersion = async () => {
+    if (!editor || !pageId || !user || !page) return;
+    setIsSavingVersion(true);
+    try {
+      const content = Y.encodeStateAsUpdate(ydoc);
+      await addDoc(collection(db, `pages/${pageId}/versions`), {
+        content: Array.from(content),
+        timestamp: serverTimestamp(),
+        userId: user.uid,
+        userName: profile?.displayName || user.displayName || 'User'
+      });
+      toast.success("Version saved");
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to save version");
+    } finally {
+      setIsSavingVersion(false);
+    }
+  };
+
+  const loadVersions = async () => {
+    if (!pageId) return;
+    try {
+      const q = query(
+        collection(db, `pages/${pageId}/versions`),
+        orderBy('timestamp', 'desc'),
+        limit(20)
+      );
+      const s = await getDocs(q);
+      setVersions(s.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const restoreVersion = (versionContent: number[]) => {
+    if (!editor) return;
+    try {
+      const update = new Uint8Array(versionContent);
+      Y.applyUpdate(ydoc, update, 'restore');
+      toast.success("Version restored");
+      setShowHistory(false);
+    } catch (error) {
+      toast.error("Failed to restore version");
+    }
+  };
+
+  useEffect(() => {
+    if (showHistory) loadVersions();
+  }, [showHistory]);
+
+  useEffect(() => {
+    const handleOpenHistory = () => setShowHistory(true);
+    window.addEventListener('editor-open-history', handleOpenHistory);
+    return () => window.removeEventListener('editor-open-history', handleOpenHistory);
+  }, []);
+
+  const [showPrivacyDialog, setShowPrivacyDialog] = useState(false);
+
   const togglePublicStatus = async () => {
     if (!pageId || !page || page.ownerId !== user?.uid) return;
     try {
@@ -467,10 +589,215 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
         updatedAt: serverTimestamp() 
       });
       toast.success(page.isPublished ? "Page is now private" : "Page is now public");
+      setShowPrivacyDialog(false);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `pages/${pageId}`);
     }
   };
+
+  const renderToolbarContent = () => (
+    <div className="flex items-center gap-1 py-1 px-1 flex-nowrap whitespace-nowrap min-w-max">
+      <div className="flex items-center gap-1 pr-2 border-r border-neutral-100 dark:border-neutral-800 shrink-0">
+        <button 
+          onClick={() => editor?.chain().focus().undo().run()} 
+          disabled={!editor?.can().undo()}
+          className="p-1.5 rounded transition-all text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-30"
+          title="Undo"
+        >
+          <Undo size={16} />
+        </button>
+        <button 
+          onClick={() => editor?.chain().focus().redo().run()} 
+          disabled={!editor?.can().redo()}
+          className="p-1.5 rounded transition-all text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-30"
+          title="Redo"
+        >
+          <Redo size={16} />
+        </button>
+      </div>
+
+      <div className="flex items-center gap-1 px-2 border-r border-neutral-100 dark:border-neutral-800 shrink-0">
+        <button 
+          onClick={() => editor?.chain().focus().toggleBold().run()} 
+          className={cn("p-1.5 rounded transition-all", editor?.isActive('bold') ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
+          title="Bold"
+        >
+          <Bold size={16} />
+        </button>
+        <button 
+          onClick={() => editor?.chain().focus().toggleItalic().run()} 
+          className={cn("p-1.5 rounded transition-all", editor?.isActive('italic') ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
+          title="Italic"
+        >
+          <Italic size={16} />
+        </button>
+        <button 
+          onClick={() => editor?.chain().focus().toggleUnderline().run()} 
+          className={cn("p-1.5 rounded transition-all", editor?.isActive('underline') ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
+          title="Underline"
+        >
+          <UnderlineIcon size={16} />
+        </button>
+        <button 
+          onClick={() => editor?.chain().focus().toggleStrike().run()} 
+          className={cn("p-1.5 rounded transition-all", editor?.isActive('strike') ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
+          title="Strikethrough"
+        >
+          <Strikethrough size={16} />
+        </button>
+      </div>
+
+      <div className="flex items-center gap-1 px-2 border-r border-neutral-100 dark:border-neutral-800 shrink-0">
+        <button 
+          onClick={() => editor?.chain().focus().setTextAlign('left').run()} 
+          className={cn("p-1.5 rounded transition-all", editor?.isActive({ textAlign: 'left' }) ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
+          title="Align Left"
+        >
+          <AlignLeft size={16} />
+        </button>
+        <button 
+          onClick={() => editor?.chain().focus().setTextAlign('center').run()} 
+          className={cn("p-1.5 rounded transition-all", editor?.isActive({ textAlign: 'center' }) ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
+          title="Align Center"
+        >
+          <AlignCenter size={16} />
+        </button>
+        <button 
+          onClick={() => editor?.chain().focus().setTextAlign('right').run()} 
+          className={cn("p-1.5 rounded transition-all", editor?.isActive({ textAlign: 'right' }) ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
+          title="Align Right"
+        >
+          <AlignRight size={16} />
+        </button>
+      </div>
+
+      <div className="flex items-center gap-1 px-2 border-r border-neutral-100 dark:border-neutral-800 shrink-0">
+         <button 
+          onClick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()} 
+          className={cn("p-1.5 rounded transition-all", editor?.isActive('heading', { level: 1 }) ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
+          title="Heading 1"
+        >
+          <Heading1 size={16} />
+        </button>
+        <button 
+          onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()} 
+          className={cn("p-1.5 rounded transition-all", editor?.isActive('heading', { level: 2 }) ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
+          title="Heading 2"
+        >
+          <Heading2 size={16} />
+        </button>
+      </div>
+
+      <div className="flex items-center gap-1 px-2 border-r border-neutral-100 dark:border-neutral-800 shrink-0">
+        <button 
+          onClick={() => editor?.chain().focus().toggleBulletList().run()} 
+          className={cn("p-1.5 rounded transition-all", editor?.isActive('bulletList') ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
+          title="Bullet List"
+        >
+          <List size={16} />
+        </button>
+        <button 
+          onClick={() => editor?.chain().focus().toggleOrderedList().run()} 
+          className={cn("p-1.5 rounded transition-all", editor?.isActive('orderedList') ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
+          title="Numbered List"
+        >
+          <ListOrdered size={16} />
+        </button>
+        <button 
+          onClick={() => editor?.chain().focus().toggleTaskList().run()} 
+          className={cn("p-1.5 rounded transition-all", editor?.isActive('taskList') ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
+          title="Task List"
+        >
+          <CheckSquare size={16} />
+        </button>
+      </div>
+
+      <div className="flex items-center gap-1 px-2 border-r border-neutral-100 dark:border-neutral-800 shrink-0">
+        <button 
+          onClick={() => editor?.chain().focus().toggleCodeBlock().run()} 
+          className={cn("p-1.5 rounded transition-all", editor?.isActive('codeBlock') ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
+          title="Code Block"
+        >
+          <CodeIcon size={16} />
+        </button>
+        <button 
+          onClick={() => editor?.chain().focus().toggleBlockquote().run()} 
+          className={cn("p-1.5 rounded transition-all", editor?.isActive('blockquote') ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
+          title="Quote"
+        >
+          <Quote size={16} />
+        </button>
+      </div>
+
+      <div className="flex items-center gap-1 px-2 border-r border-neutral-100 dark:border-neutral-800 shrink-0">
+        <button 
+          onClick={() => editor?.chain().focus().toggleSubscript().run()} 
+          className={cn("p-1.5 rounded transition-all font-bold", editor?.isActive('subscript') ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
+          title="Subscript"
+        >
+          <span className="text-sm">T₂</span>
+        </button>
+        <button 
+          onClick={() => editor?.chain().focus().toggleSuperscript().run()} 
+          className={cn("p-1.5 rounded transition-all font-bold", editor?.isActive('superscript') ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
+          title="Superscript"
+        >
+          <span className="text-sm">T²</span>
+        </button>
+        <button 
+          onClick={() => editor?.chain().focus().toggleHighlight().run()} 
+          className={cn("p-1.5 rounded transition-all", editor?.isActive('highlight') ? "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
+          title="Highlight"
+        >
+          <Highlighter size={16} />
+        </button>
+      </div>
+
+      <div className="flex items-center gap-1 px-2 shrink-0">
+        <button 
+          onClick={() => {
+            const url = window.prompt('Enter URL');
+            if (url) editor?.chain().focus().setLink({ href: url }).run();
+          }}
+          className={cn("p-1.5 rounded transition-all", editor?.isActive('link') ? "bg-blue-100 dark:bg-blue-900/30 text-blue-600" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
+          title="Add Link"
+        >
+          <LinkIcon size={16} />
+        </button>
+        <button 
+          onClick={() => fileInputRef.current?.click()} 
+          className="p-1.5 rounded text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800"
+          title="Upload Image"
+        >
+          <ImageIcon size={16} />
+        </button>
+        <button 
+          onClick={() => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} 
+          className="p-1.5 rounded text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800"
+          title="Insert Table"
+        >
+          <TableIcon size={16} />
+        </button>
+        <button 
+          onClick={() => editor?.chain().focus().unsetAllMarks().clearNodes().run()} 
+          className="p-1.5 rounded text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800"
+          title="Clear Formatting"
+        >
+          <Type size={16} className="opacity-50" />
+        </button>
+      </div>
+
+      {editor?.isActive('table') && (
+        <div className="flex items-center gap-0.5 pl-2 border-l border-neutral-100 dark:border-neutral-800 px-1">
+           <button onClick={() => editor?.chain().focus().addColumnAfter().run()} className="p-1 px-2 text-[10px] bg-neutral-100 dark:bg-neutral-800 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors">Col+</button>
+           <button onClick={() => editor?.chain().focus().deleteColumn().run()} className="p-1 px-2 text-[10px] bg-red-50 dark:bg-red-900/20 text-red-600 rounded hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors">Col-</button>
+           <button onClick={() => editor?.chain().focus().addRowAfter().run()} className="p-1 px-2 text-[10px] bg-neutral-100 dark:bg-neutral-800 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors">Row+</button>
+           <button onClick={() => editor?.chain().focus().deleteRow().run()} className="p-1 px-2 text-[10px] bg-red-50 dark:bg-red-900/20 text-red-600 rounded hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors">Row-</button>
+           <button onClick={() => editor?.chain().focus().deleteTable().run()} className="p-1 px-2 text-[10px] bg-red-50 dark:bg-red-900/20 text-red-600 rounded hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors"><Trash2 size={10} /></button>
+        </div>
+      )}
+    </div>
+  );
 
   const [scrollProgress, setScrollProgress] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -481,12 +808,26 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
     setScrollProgress(progress);
   };
 
+  const toolbarSlotId = toolbarPosition === 'top' ? 'editor-toolbar-slot' : 'editor-toolbar-slot-bottom';
+
   return (
     <div className="flex-1 h-full min-h-0 flex flex-col min-w-0 bg-white dark:bg-[#191919] transition-colors duration-300 overflow-hidden relative">
       <div 
         className="absolute top-0 left-0 h-0.5 bg-blue-500 z-[60] transition-all duration-150"
         style={{ width: `${scrollProgress}%` }}
       />
+      
+      <AnimatePresence>
+        {saveStatus === 'saving' && (
+          <motion.div 
+            initial={{ opacity: 0, scaleX: 0 }}
+            animate={{ opacity: 1, scaleX: 1 }}
+            exit={{ opacity: 0, scaleX: 0 }}
+            transition={{ duration: 2, ease: "easeInOut" }}
+            className="absolute top-0 left-0 right-0 h-0.5 bg-green-500 z-[65] origin-left pointer-events-none"
+          />
+        )}
+      </AnimatePresence>
       <input 
         type="file" 
         ref={fileInputRef} 
@@ -495,209 +836,9 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
         className="hidden" 
       />
 
-      {editor && document.getElementById('editor-toolbar-slot') && createPortal(
-        <div className="flex items-center gap-1 py-1 px-1 flex-nowrap whitespace-nowrap min-w-max">
-          <div className="flex items-center gap-1 pr-2 border-r border-neutral-100 dark:border-neutral-800 shrink-0">
-            <button 
-              onClick={() => editor.chain().focus().undo().run()} 
-              disabled={!editor.can().undo()}
-              className="p-1.5 rounded transition-all text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-30"
-              title="Undo"
-            >
-              <Undo size={16} />
-            </button>
-            <button 
-              onClick={() => editor.chain().focus().redo().run()} 
-              disabled={!editor.can().redo()}
-              className="p-1.5 rounded transition-all text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-30"
-              title="Redo"
-            >
-              <Redo size={16} />
-            </button>
-          </div>
-
-          <div className="flex items-center gap-1 px-2 border-r border-neutral-100 dark:border-neutral-800 shrink-0">
-            <button 
-              onClick={() => editor.chain().focus().toggleBold().run()} 
-              className={cn("p-1.5 rounded transition-all", editor.isActive('bold') ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
-              title="Bold"
-            >
-              <Bold size={16} />
-            </button>
-            <button 
-              onClick={() => editor.chain().focus().toggleItalic().run()} 
-              className={cn("p-1.5 rounded transition-all", editor.isActive('italic') ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
-              title="Italic"
-            >
-              <Italic size={16} />
-            </button>
-            <button 
-              onClick={() => editor.chain().focus().toggleUnderline().run()} 
-              className={cn("p-1.5 rounded transition-all", editor.isActive('underline') ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
-              title="Underline"
-            >
-              <UnderlineIcon size={16} />
-            </button>
-            <button 
-              onClick={() => editor.chain().focus().toggleStrike().run()} 
-              className={cn("p-1.5 rounded transition-all", editor.isActive('strike') ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
-              title="Strikethrough"
-            >
-              <Strikethrough size={16} />
-            </button>
-          </div>
-
-          <div className="flex items-center gap-1 px-2 border-r border-neutral-100 dark:border-neutral-800 shrink-0">
-            <button 
-              onClick={() => editor.chain().focus().setTextAlign('left').run()} 
-              className={cn("p-1.5 rounded transition-all", editor.isActive({ textAlign: 'left' }) ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
-              title="Align Left"
-            >
-              <AlignLeft size={16} />
-            </button>
-            <button 
-              onClick={() => editor.chain().focus().setTextAlign('center').run()} 
-              className={cn("p-1.5 rounded transition-all", editor.isActive({ textAlign: 'center' }) ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
-              title="Align Center"
-            >
-              <AlignCenter size={16} />
-            </button>
-            <button 
-              onClick={() => editor.chain().focus().setTextAlign('right').run()} 
-              className={cn("p-1.5 rounded transition-all", editor.isActive({ textAlign: 'right' }) ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
-              title="Align Right"
-            >
-              <AlignRight size={16} />
-            </button>
-          </div>
-
-          <div className="flex items-center gap-1 px-2 border-r border-neutral-100 dark:border-neutral-800 shrink-0">
-             <button 
-              onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} 
-              className={cn("p-1.5 rounded transition-all", editor.isActive('heading', { level: 1 }) ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
-              title="Heading 1"
-            >
-              <Heading1 size={16} />
-            </button>
-            <button 
-              onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} 
-              className={cn("p-1.5 rounded transition-all", editor.isActive('heading', { level: 2 }) ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
-              title="Heading 2"
-            >
-              <Heading2 size={16} />
-            </button>
-          </div>
-
-          <div className="flex items-center gap-1 px-2 border-r border-neutral-100 dark:border-neutral-800 shrink-0">
-            <button 
-              onClick={() => editor.chain().focus().toggleBulletList().run()} 
-              className={cn("p-1.5 rounded transition-all", editor.isActive('bulletList') ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
-              title="Bullet List"
-            >
-              <List size={16} />
-            </button>
-            <button 
-              onClick={() => editor.chain().focus().toggleOrderedList().run()} 
-              className={cn("p-1.5 rounded transition-all", editor.isActive('orderedList') ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
-              title="Numbered List"
-            >
-              <ListOrdered size={16} />
-            </button>
-            <button 
-              onClick={() => editor.chain().focus().toggleTaskList().run()} 
-              className={cn("p-1.5 rounded transition-all", editor.isActive('taskList') ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
-              title="Task List"
-            >
-              <CheckSquare size={16} />
-            </button>
-          </div>
-
-          <div className="flex items-center gap-1 px-2 border-r border-neutral-100 dark:border-neutral-800 shrink-0">
-            <button 
-              onClick={() => editor.chain().focus().toggleCodeBlock().run()} 
-              className={cn("p-1.5 rounded transition-all", editor.isActive('codeBlock') ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
-              title="Code Block"
-            >
-              <CodeIcon size={16} />
-            </button>
-            <button 
-              onClick={() => editor.chain().focus().toggleBlockquote().run()} 
-              className={cn("p-1.5 rounded transition-all", editor.isActive('blockquote') ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
-              title="Quote"
-            >
-              <Quote size={16} />
-            </button>
-          </div>
-
-          <div className="flex items-center gap-1 px-2 border-r border-neutral-100 dark:border-neutral-800 shrink-0">
-            <button 
-              onClick={() => editor.chain().focus().toggleSubscript().run()} 
-              className={cn("p-1.5 rounded transition-all font-bold", editor.isActive('subscript') ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
-              title="Subscript"
-            >
-              <span className="text-sm">T₂</span>
-            </button>
-            <button 
-              onClick={() => editor.chain().focus().toggleSuperscript().run()} 
-              className={cn("p-1.5 rounded transition-all font-bold", editor.isActive('superscript') ? "bg-neutral-100 dark:bg-neutral-800 text-black dark:text-white" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
-              title="Superscript"
-            >
-              <span className="text-sm">T²</span>
-            </button>
-            <button 
-              onClick={() => editor.chain().focus().toggleHighlight().run()} 
-              className={cn("p-1.5 rounded transition-all", editor.isActive('highlight') ? "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
-              title="Highlight"
-            >
-              <Highlighter size={16} />
-            </button>
-          </div>
-
-          <div className="flex items-center gap-1 px-2 shrink-0">
-            <button 
-              onClick={() => {
-                const url = window.prompt('Enter URL');
-                if (url) editor.chain().focus().setLink({ href: url }).run();
-              }}
-              className={cn("p-1.5 rounded transition-all", editor.isActive('link') ? "bg-blue-100 dark:bg-blue-900/30 text-blue-600" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
-              title="Add Link"
-            >
-              <LinkIcon size={16} />
-            </button>
-            <button 
-              onClick={() => fileInputRef.current?.click()} 
-              className="p-1.5 rounded text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800"
-              title="Upload Image"
-            >
-              <ImageIcon size={16} />
-            </button>
-            <button 
-              onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} 
-              className="p-1.5 rounded text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800"
-              title="Insert Table"
-            >
-              <TableIcon size={16} />
-            </button>
-            <button 
-              onClick={() => editor.chain().focus().unsetAllMarks().clearNodes().run()} 
-              className="p-1.5 rounded text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800"
-              title="Clear Formatting"
-            >
-              <Type size={16} className="opacity-50" />
-            </button>
-          </div>
-
-          {editor.isActive('table') && (
-            <div className="flex items-center gap-0.5 pl-2 border-l border-neutral-100 dark:border-neutral-800">
-               <button onClick={() => editor.chain().focus().addColumnAfter().run()} className="p-1 px-2 text-[10px] bg-neutral-100 dark:bg-neutral-800 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors">Col+</button>
-               <button onClick={() => editor.chain().focus().deleteColumn().run()} className="p-1 px-2 text-[10px] bg-red-50 dark:bg-red-900/20 text-red-600 rounded hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors">Col-</button>
-               <button onClick={() => editor.chain().focus().addRowAfter().run()} className="p-1 px-2 text-[10px] bg-neutral-100 dark:bg-neutral-800 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors">Row+</button>
-               <button onClick={() => editor.chain().focus().deleteRow().run()} className="p-1 px-2 text-[10px] bg-red-50 dark:bg-red-900/20 text-red-600 rounded hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors">Row-</button>
-               <button onClick={() => editor.chain().focus().deleteTable().run()} className="p-1 px-2 text-[10px] bg-red-50 dark:bg-red-900/20 text-red-600 rounded hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors"><Trash2 size={10} /></button>
-            </div>
-          )}
-        </div>,
-        document.getElementById('editor-toolbar-slot')!
+      {editor && document.getElementById(toolbarSlotId) && createPortal(
+        renderToolbarContent(),
+        document.getElementById(toolbarSlotId)!
       )}
 
       {document.getElementById('editor-actions-slot') && createPortal(
@@ -723,18 +864,68 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
           </div>
           <div className="flex items-center gap-1.5 h-7">
             {page?.ownerId === user?.uid && (
-              <button 
-                onClick={togglePublicStatus} 
-                className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-medium transition-colors h-full",
-                  page?.isPublished 
-                    ? "bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400" 
-                    : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700 secondary-button"
-                )}
-              >
-                {page?.isPublished ? <Check size={10} /> : <AlertCircle size={10} />}
-                <span>{page?.isPublished ? 'Public' : 'Private'}</span>
-              </button>
+              <>
+                <button 
+                  onClick={() => setShowHistory(true)} 
+                  className="p-1.5 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-500 transition-colors h-full"
+                  title="Version History"
+                >
+                  <History size={14} />
+                </button>
+                <button 
+                  onClick={triggerManualSave}
+                  disabled={isSavingVersion || (saveStatus === 'saving')}
+                  className={cn(
+                    "p-1.5 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-500 transition-all h-full relative",
+                    saveStatus === 'saved' && "text-green-500"
+                  )}
+                  title={autoSave ? "Auto-saving enabled" : "Save Changes"}
+                >
+                  <AnimatePresence mode="wait">
+                    {saveStatus === 'saving' || isSavingVersion ? (
+                      <motion.div
+                        key="saving"
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.8 }}
+                      >
+                        <Loader2 size={14} className="animate-spin" />
+                      </motion.div>
+                    ) : saveStatus === 'saved' ? (
+                      <motion.div
+                        key="saved"
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.8 }}
+                      >
+                        <Check size={14} />
+                      </motion.div>
+                    ) : (
+                      <motion.div
+                        key="idle"
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.8 }}
+                      >
+                        <Save size={14} />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </button>
+                <div className="w-px h-4 bg-neutral-200 dark:bg-neutral-800 mx-1" />
+                <button 
+                  onClick={() => setShowPrivacyDialog(true)} 
+                  className={cn(
+                    "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-medium transition-colors h-full",
+                    page?.isPublished 
+                      ? "bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400" 
+                      : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700 secondary-button"
+                  )}
+                >
+                  {page?.isPublished ? <Check size={10} /> : <AlertCircle size={10} />}
+                  <span>{page?.isPublished ? 'Public' : 'Private'}</span>
+                </button>
+              </>
             )}
             <button 
               onClick={sharePage} 
@@ -794,7 +985,7 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
           </div>
         </div>
 
-        {editor && (
+        {editor && showBubbleMenu && (
           <BubbleMenu 
             editor={editor} 
             tippyOptions={{ duration: 100 }}
@@ -822,17 +1013,11 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
                 <Heading2 size={14} />
               </button>
               <div className="w-px h-4 bg-neutral-200 dark:bg-neutral-800 mx-1" />
-              <button onClick={() => editor.chain().focus().setColor('#9333ea').run()} className="p-1.5 rounded hover:bg-neutral-50 dark:hover:bg-neutral-800" title="Purple">
-                <div className="w-3 h-3 rounded-full bg-purple-500" />
-              </button>
               <button onClick={() => editor.chain().focus().setColor('#ef4444').run()} className="p-1.5 rounded hover:bg-neutral-50 dark:hover:bg-neutral-800" title="Red">
                 <div className="w-3 h-3 rounded-full bg-red-500" />
               </button>
               <button onClick={() => editor.chain().focus().setColor('#3b82f6').run()} className="p-1.5 rounded hover:bg-neutral-50 dark:hover:bg-neutral-800" title="Blue">
                 <div className="w-3 h-3 rounded-full bg-blue-500" />
-              </button>
-              <button onClick={() => editor.chain().focus().setColor('#16a34a').run()} className="p-1.5 rounded hover:bg-neutral-50 dark:hover:bg-neutral-800" title="Green">
-                <div className="w-3 h-3 rounded-full bg-green-600" />
               </button>
               <button onClick={() => editor.chain().focus().unsetColor().run()} className="p-1.5 rounded hover:bg-neutral-50 dark:hover:bg-neutral-800" title="Clear Color">
                 <X size={14} className="opacity-50" />
@@ -841,7 +1026,7 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
           </BubbleMenu>
         )}
 
-        {editor && (
+        {editor && showFloatingMenu && (
           <FloatingMenu editor={editor} tippyOptions={{ duration: 100 }}>
             <div className="flex items-center gap-0.5 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg shadow-xl p-1 animate-in fade-in zoom-in duration-200 ml-[-40px]">
               <button onClick={() => editor.chain().focus().toggleBulletList().run()} className="p-1.5 rounded hover:bg-neutral-50 dark:hover:bg-neutral-800" title="Bullet List">
@@ -860,6 +1045,52 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
         <EditorContent editor={editor} />
       </div>
     </div>
+
+      <AnimatePresence>
+        {showHistory && (
+          <motion.div
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            className="fixed top-0 right-0 bottom-0 w-80 bg-white dark:bg-[#191919] border-l border-neutral-200 dark:border-neutral-800 z-[110] shadow-2xl flex flex-col font-sans"
+          >
+            <div className="p-4 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between">
+              <h3 className="font-bold flex items-center gap-2">
+                <History size={18} />
+                History
+              </h3>
+              <button onClick={() => setShowHistory(false)} className="p-1 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded text-neutral-500">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+              {versions.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-neutral-400 gap-2">
+                  <RotateCcw size={32} className="opacity-20" />
+                  <p className="text-sm">No versions saved yet.</p>
+                </div>
+              ) : versions.map((v) => (
+                <div key={v.id} className="p-3 rounded-xl border border-neutral-100 dark:border-neutral-800 hover:border-blue-500/50 dark:hover:border-blue-500/50 bg-neutral-50/50 dark:bg-neutral-900/50 group transition-all">
+                  <div className="flex justify-between items-start mb-1">
+                    <span className="text-xs font-bold text-neutral-700 dark:text-neutral-300">
+                      {v.userName}
+                    </span>
+                    <button 
+                      onClick={() => restoreVersion(v.content)}
+                      className="text-[10px] uppercase font-bold text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      Restore
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-neutral-400">
+                    {v.timestamp?.toMillis ? new Date(v.timestamp.toMillis()).toLocaleString() : 'Just now'}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showQRCode && (
@@ -908,6 +1139,53 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
                 >
                   {copied ? <Check size={18} /> : <Share2 size={18} />}
                   {copied ? 'Link Copied!' : 'Copy Share Link'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {showPrivacyDialog && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+            onClick={() => setShowPrivacyDialog(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="bg-white dark:bg-neutral-900 p-6 rounded-2xl shadow-2xl relative max-w-sm w-full flex flex-col gap-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="space-y-2">
+                <h3 className="text-lg font-bold dark:text-white">
+                  {page?.isPublished ? 'Make Private?' : 'Make Public?'}
+                </h3>
+                <p className="text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed">
+                  {page?.isPublished 
+                    ? "Only you and those you explicitly invite will be able to see this note." 
+                    : "Anyone with the link will be able to view this note. Collaborative editing still requires authorization."}
+                </p>
+              </div>
+
+              <div className="flex gap-3 mt-2">
+                <button 
+                  onClick={() => setShowPrivacyDialog(false)}
+                  className="flex-1 py-2.5 rounded-xl font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={togglePublicStatus}
+                  className={cn(
+                    "flex-1 py-2.5 rounded-xl font-medium text-white transition-opacity hover:opacity-90",
+                    page?.isPublished ? "bg-neutral-900 dark:bg-neutral-100 dark:text-neutral-900 text-white" : "bg-blue-600"
+                  )}
+                >
+                  {page?.isPublished ? 'Make Private' : 'Make Public'}
                 </button>
               </div>
             </motion.div>

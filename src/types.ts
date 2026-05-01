@@ -5,6 +5,10 @@ export type UserProfile = {
   photoURL: string | null;
   avatarSeed?: string;
   theme: 'light' | 'dark' | 'system';
+  toolbarPosition?: 'top' | 'bottom';
+  showFloatingMenu?: boolean;
+  showBubbleMenu?: boolean;
+  autoSave?: boolean;
 };
 
 export type PageMetadata = {

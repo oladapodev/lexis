@@ -1,20 +1,57 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# ZenNote
 
-# Run and deploy your AI Studio app
+A minimal, secure, and real-time collaborative note-taking application built with React, Tiptap, and Firebase.
 
-This contains everything you need to run your app locally.
+## Features
 
-View your app in AI Studio: https://ai.studio/apps/2c98c0b4-75d6-41ef-a7e5-92da7ce031fb
+- **Real-time Collaboration**: Edit notes with others simultaneously with live cursor and presence indicators.
+- **Private & Public Notes**: Keep your thoughts private or share them with a public link.
+- **Modern Editor**: A distraction-free writing experience with a floating menu, bubble menu, and slash commands.
+- **Mobile Optimized**: Ergonomic mobile toolbar and responsive sidebar for the best experience on all devices.
+- **Security First**: Granular Firestore rules ensuring private stay private.
+- **Themes**: Beautiful light and dark modes.
+- **Offline Ready**: Robust authentication and data handling.
 
-## Run Locally
+## Tech Stack
 
-**Prerequisites:**  Node.js
+- **Frontend**: React 18, Vite, Tailwind CSS, Framer Motion
+- **Editor**: Tiptap (Headless rich-text editor)
+- **Backend**: Firebase Authentication, Firestore
+- **State Management**: React Hooks & Context API
+- **Icons**: Lucide React
 
+## Getting Started
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+### Prerequisites
+
+- Node.js (v18+)
+- Firebase Project
+
+### Installation
+
+1. Clone the repository
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Set up environment variables:
+   Create a `.env` file or use the platform's secret manager for:
+   - `VITE_FIREBASE_API_KEY`
+   - `VITE_FIREBASE_AUTH_DOMAIN`
+   - `VITE_FIREBASE_PROJECT_ID`
+   - `VITE_FIREBASE_STORAGE_BUCKET`
+   - `VITE_FIREBASE_MESSAGING_SENDER_ID`
+   - `VITE_FIREBASE_APP_ID`
+
+4. Run the development server:
+   ```bash
+   npm run dev
+   ```
+
+## Security & Privacy
+
+ZenNote uses a "Master Gate" pattern for Firestore rules. Private notes only allow access to the owner. When a note is switched to "Public", a confirmation dialog explains the implications before updating the sharing status.
+
+## License
+
+MIT © ZenNote

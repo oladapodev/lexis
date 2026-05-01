@@ -12,6 +12,7 @@ import { auth, db } from './firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { UserProfile } from '../types';
 import { getRandomAvatarSeed } from './avatarUtils';
+import { toast } from 'sonner';
 
 interface AuthContextType {
   user: User | null;
@@ -22,6 +23,14 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   theme: 'light' | 'dark' | 'system';
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
+  toolbarPosition: 'top' | 'bottom';
+  setToolbarPosition: (pos: 'top' | 'bottom') => void;
+  showFloatingMenu: boolean;
+  setShowFloatingMenu: (show: boolean) => void;
+  showBubbleMenu: boolean;
+  setShowBubbleMenu: (show: boolean) => void;
+  autoSave: boolean;
+  setAutoSave: (enabled: boolean) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -31,6 +40,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [theme, setThemeState] = useState<'light' | 'dark' | 'system'>((localStorage.getItem('theme') as 'light' | 'dark' | 'system') || 'system');
+  const [toolbarPosition, setToolbarPositionState] = useState<'top' | 'bottom'>((localStorage.getItem('toolbarPosition') as 'top' | 'bottom') || 'top');
+  const [showFloatingMenu, setShowFloatingMenuState] = useState<boolean>(localStorage.getItem('showFloatingMenu') !== 'false');
+  const [showBubbleMenu, setShowBubbleMenuState] = useState<boolean>(localStorage.getItem('showBubbleMenu') !== 'false');
+  const [autoSave, setAutoSaveState] = useState<boolean>(localStorage.getItem('autoSave') !== 'false');
 
   const applyTheme = (t: 'light' | 'dark' | 'system') => {
     const root = document.documentElement;
@@ -67,96 +80,124 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const setToolbarPosition = async (pos: 'top' | 'bottom') => {
+    setToolbarPositionState(pos);
+    localStorage.setItem('toolbarPosition', pos);
+
+    if (user && !user.isAnonymous) {
+      try {
+        await setDoc(doc(db, 'users', user.uid), { toolbarPosition: pos }, { merge: true });
+      } catch (e) {
+        console.error("Failed to save toolbar position preference:", e);
+      }
+    }
+  };
+
+  const setShowFloatingMenu = async (show: boolean) => {
+    setShowFloatingMenuState(show);
+    localStorage.setItem('showFloatingMenu', String(show));
+    if (user && !user.isAnonymous) {
+      await setDoc(doc(db, 'users', user.uid), { showFloatingMenu: show }, { merge: true }).catch(console.error);
+    }
+  };
+
+  const setShowBubbleMenu = async (show: boolean) => {
+    setShowBubbleMenuState(show);
+    localStorage.setItem('showBubbleMenu', String(show));
+    if (user && !user.isAnonymous) {
+      await setDoc(doc(db, 'users', user.uid), { showBubbleMenu: show }, { merge: true }).catch(console.error);
+    }
+  };
+
+  const setAutoSave = async (enabled: boolean) => {
+    setAutoSaveState(enabled);
+    localStorage.setItem('autoSave', String(enabled));
+    if (user && !user.isAnonymous) {
+      await setDoc(doc(db, 'users', user.uid), { autoSave: enabled }, { merge: true }).catch(console.error);
+    }
+  };
+
   useEffect(() => {
-    // Initial theme apply
     applyTheme(theme);
-    
-    // Listen for system theme changes if in system mode
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleSystemChange = () => {
-      // Re-apply if we are in system mode
       const currentTheme = localStorage.getItem('theme') as any || 'system';
       if (currentTheme === 'system') applyTheme('system');
     };
     mediaQuery.addEventListener('change', handleSystemChange);
-    
     return () => mediaQuery.removeEventListener('change', handleSystemChange);
   }, [theme]);
 
   useEffect(() => {
-    // Set persistence once on mount
-    setPersistence(auth, browserLocalPersistence).catch(err => {
-      console.error("Persistence failed:", err);
-    });
-
-    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-      setUser(user);
-      if (user) {
-        const userDoc = doc(db, 'users', user.uid);
+    setPersistence(auth, browserLocalPersistence).catch(console.error);
+    const unsubscribeAuth = onAuthStateChanged(auth, async (u) => {
+      setUser(u);
+      if (u) {
+        const userDoc = doc(db, 'users', u.uid);
         const snapshot = await getDoc(userDoc);
-        
         if (!snapshot.exists()) {
           const newProfile: UserProfile = {
-            uid: user.uid,
-            email: user.email || null,
-            displayName: user.displayName || 'Guest',
-            photoURL: user.photoURL || null,
-            avatarSeed: !user.photoURL ? getRandomAvatarSeed() : null,
+            uid: u.uid,
+            email: u.email || null,
+            displayName: u.displayName || 'Guest',
+            photoURL: u.photoURL || null,
+            avatarSeed: !u.photoURL ? getRandomAvatarSeed() : null,
             theme: 'system',
           };
-          await setDoc(userDoc, {
-            ...newProfile,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
+          await setDoc(userDoc, { ...newProfile, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
           setProfile(newProfile);
         } else {
           const profileData = snapshot.data() as UserProfile;
           setProfile(profileData);
-          
-          // Only sync theme FROM cloud if we haven't set a local override in this session
-          // or if the cloud theme is more specific than 'system'
-          const localTheme = localStorage.getItem('theme');
-          if (!localTheme && profileData.theme) {
-            setThemeState(profileData.theme as any);
-            applyTheme(profileData.theme as any);
+          if (!localStorage.getItem('theme') && profileData.theme) {
+            setThemeState(profileData.theme);
+            applyTheme(profileData.theme);
           }
+          if (!localStorage.getItem('toolbarPosition') && profileData.toolbarPosition) {
+            setToolbarPositionState(profileData.toolbarPosition);
+          }
+          if (profileData.showFloatingMenu !== undefined) setShowFloatingMenuState(profileData.showFloatingMenu);
+          if (profileData.showBubbleMenu !== undefined) setShowBubbleMenuState(profileData.showBubbleMenu);
+          if (profileData.autoSave !== undefined) setAutoSaveState(profileData.autoSave);
         }
       } else {
         setProfile(null);
       }
       setLoading(false);
     });
-
     return () => unsubscribeAuth();
   }, []);
 
   const signIn = async () => {
-    try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-    } catch (error: any) {
-      if (error.code === 'auth/popup-closed-by-user') {
-        console.warn('Sign-in popup closed by user');
-      } else {
-        console.error('Sign-in error:', error);
-      }
-    }
+    const provider = new GoogleAuthProvider();
+    await signInWithPopup(auth, provider).catch(console.error);
   };
 
   const signInAnon = async () => {
     try {
       await signInAnonymously(auth);
-    } catch (error) {
-      console.error('Anonymous sign-in error:', error);
-      setLoading(false);
+    } catch (error: any) {
+      console.error("Anonymous sign-in error:", error);
+      if (error.code === 'auth/admin-restricted-operation') {
+        toast.error("Collaborative editing restricted", {
+          description: "Anonymous Auth is likely disabled. Please enable it in the Firebase console or log in with Google.",
+          duration: 6000
+        });
+      } else {
+        toast.error("Failed to enter workspace anonymously.");
+      }
     }
   };
 
   const signOut = () => auth.signOut();
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signIn, signInAnon, signOut, theme, setTheme }}>
+    <AuthContext.Provider value={{ 
+      user, profile, loading, signIn, signInAnon, signOut, 
+      theme, setTheme, toolbarPosition, setToolbarPosition,
+      showFloatingMenu, setShowFloatingMenu, showBubbleMenu, setShowBubbleMenu,
+      autoSave, setAutoSave
+    }}>
       {children}
     </AuthContext.Provider>
   );
@@ -164,8 +205,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (context === undefined) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };
