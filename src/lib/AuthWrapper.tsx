@@ -172,7 +172,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             email: u.email || null,
             displayName: u.displayName || 'Guest',
             photoURL: u.photoURL || null,
-            avatarSeed: !u.photoURL ? getRandomAvatarSeed() : null,
+            avatarSeed: !u.photoURL ? getRandomAvatarSeed(u.uid) : null,
             theme: 'system',
           };
           await setDoc(userDoc, { ...newProfile, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
@@ -183,7 +183,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           
           // Ensure every user has an avatar seed if they don't have a photoURL
           if (!profileData.avatarSeed && !profileData.photoURL) {
-            const seed = getRandomAvatarSeed();
+            const seed = getRandomAvatarSeed(u.uid);
             setDoc(userDoc, { avatarSeed: seed, updatedAt: serverTimestamp() }, { merge: true });
             setProfile(p => p ? { ...p, avatarSeed: seed } : null);
           }

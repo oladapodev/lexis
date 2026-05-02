@@ -1,0 +1,30 @@
+.simple-editor-wrapper {
+  --tt-toolbar-height: 40px;
+}
+
+.simple-editor-wrapper {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.simple-editor-content {
+  max-width: 100%;
+  width: 100%;
+  margin: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.simple-editor-content .tiptap.ProseMirror.simple-editor {
+  flex: 1;
+  padding: 0.25rem 0 30vh;
+}
+
+@media screen and (max-width: 480px) {
+  .simple-editor-content .tiptap.ProseMirror.simple-editor {
+    padding: 0.25rem 0 30vh;
+  }
+}

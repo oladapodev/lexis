@@ -1,4 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
+@import './styles/_variables.scss';
+@import './styles/_keyframe-animations.scss';
 @import "tailwindcss";
 
 @theme {
@@ -195,3 +197,68 @@
   }
 }
 
+/* Keep Tiptap simple toolbar visually aligned with the old Lexis header toolbar */
+.lexis-editor-toolbar {
+  position: static !important;
+  z-index: 1 !important;
+  min-height: 0 !important;
+  width: auto !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  overflow: visible !important;
+}
+
+.lexis-editor-toolbar .tiptap-toolbar-group {
+  gap: 0.125rem;
+}
+
+.lexis-editor-toolbar .tiptap-button {
+  height: 1.75rem;
+  min-width: 1.75rem;
+  padding: 0.375rem;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: rgb(115 115 115);
+}
+
+.dark .lexis-editor-toolbar .tiptap-button {
+  color: rgb(163 163 163);
+}
+
+.lexis-editor-toolbar .tiptap-button:hover:not([disabled]),
+.lexis-editor-toolbar .tiptap-button[data-highlighted="true"],
+.lexis-editor-toolbar .tiptap-button[data-active-item="true"] {
+  background: rgb(245 245 245);
+  color: rgb(38 38 38);
+}
+
+.dark .lexis-editor-toolbar .tiptap-button:hover:not([disabled]),
+.dark .lexis-editor-toolbar .tiptap-button[data-highlighted="true"],
+.dark .lexis-editor-toolbar .tiptap-button[data-active-item="true"] {
+  background: rgb(38 38 38);
+  color: rgb(245 245 245);
+}
+
+.lexis-editor-toolbar .tiptap-button[data-active-state="on"]:not([disabled]),
+.lexis-editor-toolbar .tiptap-button[data-state="open"]:not([disabled]) {
+  background: rgb(245 245 245);
+  color: rgb(23 23 23);
+}
+
+.dark
+  .lexis-editor-toolbar
+  .tiptap-button[data-active-state="on"]:not([disabled]),
+.dark .lexis-editor-toolbar .tiptap-button[data-state="open"]:not([disabled]) {
+  background: rgb(38 38 38);
+  color: rgb(245 245 245);
+}
+
+.lexis-editor-toolbar .tiptap-separator {
+  background-color: rgb(229 229 229);
+}
+
+.dark .lexis-editor-toolbar .tiptap-separator {
+  background-color: rgb(64 64 64);
+}

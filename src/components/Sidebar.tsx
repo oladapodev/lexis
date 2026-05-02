@@ -62,6 +62,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [workspaceName, setWorkspaceName] = useState(() => localStorage.getItem('workspaceName') || 'Lexis Space');
   const [isEditingName, setIsEditingName] = useState(false);
 
+  const closeSidebarOnMobile = () => {
+    if (window.innerWidth < 768) {
+      setIsCollapsed(true);
+    }
+  };
+
   useEffect(() => {
     localStorage.setItem('workspaceName', workspaceName);
   }, [workspaceName]);
@@ -110,6 +116,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         updatedAt: serverTimestamp(),
       });
       onSelectPage(docRef.id);
+      closeSidebarOnMobile();
       toast.success("New page created");
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, path);
@@ -170,12 +177,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {!isCollapsed && (
                 <div 
                   className="flex items-center gap-2 flex-1 cursor-pointer overflow-hidden p-1 rounded-lg hover:bg-neutral-200/50 dark:hover:bg-neutral-800/50 transition-colors"
-                  onClick={() => navigate('/dashboard')}
+                  onClick={() => {
+                    navigate('/dashboard');
+                    closeSidebarOnMobile();
+                  }}
                 >
                   <UserAvatar 
+                    uid={user?.uid}
                     photoURL={profile?.photoURL || user?.photoURL}
                     displayName={profile?.displayName || user?.displayName}
-                    avatarSeed={profile?.avatarSeed}
+                    avatarSeed={profile?.avatarSeed || (user ? `avataaars:${user.uid}` : undefined)}
                     size={24}
                   />
                   <div className="flex flex-col overflow-hidden">
@@ -271,12 +282,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       transition={{ type: 'spring', bounce: 0, duration: 0.3 }}
                       className="group/item relative"
                     >
-                      <SidebarItem 
-                        icon={<FileText size={16} />}
-                        label={page.title || "Untitled"}
-                        active={activePageId === page.id}
-                        onClick={() => onSelectPage(page.id)}
-                      />
+                        <SidebarItem 
+                          icon={<FileText size={16} />}
+                          label={page.title || "Untitled"}
+                          active={activePageId === page.id}
+                          onClick={() => {
+                            onSelectPage(page.id);
+                            closeSidebarOnMobile();
+                          }}
+                        />
                       <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity bg-neutral-100 dark:bg-neutral-800 p-0.5 rounded shadow-sm">
                         <button 
                            onClick={(e) => { e.stopPropagation(); copyPageLink(page.id); }}
@@ -316,19 +330,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
                  onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} 
                />
                {user && (
-                 <SidebarItem icon={<UserIcon size={16} />} label="Account" active={activeView === 'account'} onClick={() => onSelectView('account')} />
+                 <SidebarItem icon={<UserIcon size={16} />} label="Account" active={activeView === 'account'} onClick={() => {
+                   onSelectView('account');
+                   closeSidebarOnMobile();
+                 }} />
                )}
                {user ? (
-                 <SidebarItem icon={<LogOut size={16} />} label="Log out" onClick={() => {
-                   signOut();
-                   toast.success("Logged out successfully");
-                   navigate('/');
-                 }} />
-               ) : (
-                 <SidebarItem icon={<LogIn size={16} />} label="Sign In" onClick={() => {
-                   signIn().then(() => toast.success("Signed in successfully")).catch(() => toast.error("Sign in failed"));
-                 }} />
-               )}
+                  <SidebarItem icon={<LogOut size={16} />} label="Log out" onClick={() => {
+                    signOut();
+                    toast.success("Logged out successfully");
+                    navigate('/');
+                    closeSidebarOnMobile();
+                  }} />
+                ) : (
+                  <SidebarItem icon={<LogIn size={16} />} label="Sign In" onClick={() => {
+                    signIn().then(() => toast.success("Signed in successfully")).catch(() => toast.error("Sign in failed"));
+                    closeSidebarOnMobile();
+                  }} />
+                )}
             </div>
           )}
         </div>

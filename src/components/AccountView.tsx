@@ -57,9 +57,10 @@ export const AccountView: React.FC = () => {
           <header className="flex flex-col sm:flex-row items-center sm:items-start gap-6 pb-8 border-b border-neutral-100 dark:border-neutral-800 text-center sm:text-left">
             <div className="relative group">
               <UserAvatar 
+                uid={user?.uid}
                 photoURL={profile?.photoURL}
                 displayName={profile?.displayName}
-                avatarSeed={profile?.avatarSeed}
+                avatarSeed={profile?.avatarSeed || (user ? `avataaars:${user.uid}` : undefined)}
                 size={96}
               />
               <button 
