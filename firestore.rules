@@ -89,6 +89,18 @@ service cloud.firestore {
         && (!data.keys().hasAny(['clientId']) || data.clientId is string);
     }
 
+    function isValidPresenceUpdate(data) {
+      return (!data.keys().hasAny(['uid']) || data.uid == request.auth.uid) &&
+        (!data.keys().hasAny(['ownerId']) || data.ownerId is string) &&
+        (!data.keys().hasAny(['isPublished']) || data.isPublished is bool) &&
+        (!data.keys().hasAny(['displayName']) || data.displayName == null || (data.displayName is string && data.displayName.size() <= 100)) &&
+        (!data.keys().hasAny(['photoURL']) || data.photoURL == null || (data.photoURL is string && data.photoURL.size() <= 1000)) &&
+        (!data.keys().hasAny(['avatarSeed']) || data.avatarSeed == null || (data.avatarSeed is string && data.avatarSeed.size() <= 100)) &&
+        (!data.keys().hasAny(['cursorPos']) || data.cursorPos is int) &&
+        (!data.keys().hasAny(['clientId']) || data.clientId is string) &&
+        (!data.keys().hasAny(['lastActive']) || data.lastActive == request.time || (resource != null && data.lastActive == resource.data.lastActive));
+    }
+
     // --- Collection Matches ---
 
     match /users/{userId} {
@@ -111,8 +123,8 @@ service cloud.firestore {
 
       // Sub-collections: Updates and Presences
       function canAccessPage(pId) {
-        let p = get(/databases/$(database)/documents/pages/$(pId)).data;
-        return isOwner(p.ownerId) || p.isPublished == true;
+        let p = get(/databases/$(database)/documents/pages/$(pId));
+        return p != null && (isOwner(p.data.ownerId) || p.data.isPublished == true);
       }
 
       match /updates/{updateId} {
@@ -122,7 +134,8 @@ service cloud.firestore {
 
       match /presences/{uid} {
         allow list, get: if canAccessPage(pageId);
-        allow create, update: if isSignedIn() && uid == request.auth.uid && canAccessPage(pageId) && isValidPresence(incoming());
+        allow create: if isSignedIn() && uid == request.auth.uid && canAccessPage(pageId) && isValidPresence(incoming());
+        allow update: if isSignedIn() && uid == request.auth.uid && canAccessPage(pageId) && isValidPresenceUpdate(incoming());
         allow delete: if isSignedIn() && uid == request.auth.uid;
       }
 

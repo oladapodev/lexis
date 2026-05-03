@@ -84,26 +84,34 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
   }, [toolbarPosition, pageId]);
 
   useEffect(() => {
-    if (!pageId || pageId === "null" || !user) return;
+    if (!pageId || pageId === "null" || !user) {
+      setPage(null);
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
+    setPage(null);
     const pagePath = `pages/${pageId}`;
     const unsubscribe = onSnapshot(
       doc(db, pagePath),
       (snapshot) => {
         setLoading(false);
         if (!snapshot.exists()) {
+          setPage(null);
           navigate("/dashboard");
           return;
         }
 
         const pageData = { id: snapshot.id, ...snapshot.data() } as PageMetadata;
         if (pageData.ownerId !== user.uid && !pageData.isPublished) {
+          setPage(null);
           navigate("/dashboard");
           return;
         }
 
         if (pageData.isArchived) {
+          setPage(null);
           navigate("/dashboard");
           return;
         }
@@ -121,7 +129,7 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
   }, [pageId, user, navigate]);
 
   useEffect(() => {
-    if (!pageId || !user || !page) return;
+    if (!pageId || !user || !page || page.id !== pageId) return;
 
     setSyncing(true);
     const updatesCollection = collection(db, `pages/${pageId}/updates`);
