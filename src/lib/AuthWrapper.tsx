@@ -163,7 +163,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setPersistence(auth, browserLocalPersistence).catch(console.error);
     const unsubscribeAuth = onAuthStateChanged(auth, async (u) => {
       setUser(u);
-      if (u) {
+      if (!u) {
+        setProfile(null);
+        setLoading(false);
+        return;
+      }
+
+      try {
         const userDoc = doc(db, 'users', u.uid);
         const snapshot = await getDoc(userDoc);
         if (!snapshot.exists()) {
@@ -175,34 +181,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             avatarSeed: !u.photoURL ? getRandomAvatarSeed(u.uid) : null,
             theme: 'system',
           };
-          await setDoc(userDoc, { ...newProfile, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+          try {
+            await setDoc(userDoc, { ...newProfile, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+          } catch (error) {
+            console.error("Failed to write new user profile:", error);
+          }
           setProfile(newProfile);
-        } else {
-          const profileData = snapshot.data() as UserProfile;
-          setProfile(profileData);
-          
-          // Ensure every user has an avatar seed if they don't have a photoURL
-          if (!profileData.avatarSeed && !profileData.photoURL) {
-            const seed = getRandomAvatarSeed(u.uid);
-            setDoc(userDoc, { avatarSeed: seed, updatedAt: serverTimestamp() }, { merge: true });
-            setProfile(p => p ? { ...p, avatarSeed: seed } : null);
-          }
-
-          if (!localStorage.getItem('theme') && profileData.theme) {
-            setThemeState(profileData.theme);
-            applyTheme(profileData.theme);
-          }
-          if (!localStorage.getItem('toolbarPosition') && profileData.toolbarPosition) {
-            setToolbarPositionState(profileData.toolbarPosition);
-          }
-          if (profileData.showFloatingMenu !== undefined) setShowFloatingMenuState(profileData.showFloatingMenu);
-          if (profileData.showBubbleMenu !== undefined) setShowBubbleMenuState(profileData.showBubbleMenu);
-          if (profileData.autoSave !== undefined) setAutoSaveState(profileData.autoSave);
+          return;
         }
-      } else {
-        setProfile(null);
+
+        const profileData = snapshot.data() as UserProfile;
+        setProfile(profileData);
+
+        // Ensure every user has an avatar seed if they don't have a photoURL
+        if (!profileData.avatarSeed && !profileData.photoURL) {
+          const seed = getRandomAvatarSeed(u.uid);
+          try {
+            await setDoc(userDoc, { avatarSeed: seed, updatedAt: serverTimestamp() }, { merge: true });
+            setProfile(p => p ? { ...p, avatarSeed: seed } : null);
+          } catch (error) {
+            console.error("Failed to update avatar seed:", error);
+          }
+        }
+
+        if (!localStorage.getItem('theme') && profileData.theme) {
+          setThemeState(profileData.theme);
+          applyTheme(profileData.theme);
+        }
+        if (!localStorage.getItem('toolbarPosition') && profileData.toolbarPosition) {
+          setToolbarPositionState(profileData.toolbarPosition);
+        }
+        if (profileData.showFloatingMenu !== undefined) setShowFloatingMenuState(profileData.showFloatingMenu);
+        if (profileData.showBubbleMenu !== undefined) setShowBubbleMenuState(profileData.showBubbleMenu);
+        if (profileData.autoSave !== undefined) setAutoSaveState(profileData.autoSave);
+      } catch (error) {
+        console.error("Failed to load user profile:", error);
+        setProfile({
+          uid: u.uid,
+          email: u.email || null,
+          displayName: u.displayName || 'Guest',
+          photoURL: u.photoURL || null,
+          avatarSeed: u.photoURL ? null : getRandomAvatarSeed(u.uid),
+          theme: 'system',
+        });
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     });
     return () => unsubscribeAuth();
   }, []);
