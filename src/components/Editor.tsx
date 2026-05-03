@@ -53,6 +53,7 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
   );
   const [copied, setCopied] = useState(false);
   const [presences, setPresences] = useState<Presence[]>([]);
+  const [presencesEnabled, setPresencesEnabled] = useState(true);
 
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const pageRef = useRef<PageMetadata | null>(null);
@@ -65,6 +66,16 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
     [],
   );
   const ydoc = useMemo(() => new Y.Doc(), [pageId]);
+
+  useEffect(() => {
+    setPresencesEnabled(true);
+  }, [pageId, user?.uid, profile?.uid]);
+
+  const isPermissionDenied = (error: unknown) => {
+    if (!error || typeof error !== "object") return false;
+    const code = (error as { code?: unknown }).code;
+    return typeof code === "string" && code.toLowerCase() === "permission-denied";
+  };
 
   useEffect(() => {
     pageRef.current = page;
@@ -244,15 +255,23 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
 
   useEffect(() => {
     if (!pageId || !user || !page) return;
+    if (!presencesEnabled) return;
+    if (!page.ownerId || page.ownerId !== user.uid) {
+      setPresences([]);
+      return;
+    }
 
     const presenceRef = doc(db, `pages/${pageId}/presences`, user.uid);
+    let hasPermission = true;
+    let unsubscribe: (() => void) | null = null;
     const displayName =
       profile?.displayName ||
       user.displayName ||
       (user.isAnonymous ? "Guest" : "User");
 
-    const publishPresence = (cursorPos?: number) =>
-      setDoc(
+    const publishPresence = (cursorPos?: number) => {
+      if (!hasPermission) return;
+      return setDoc(
         presenceRef,
         {
           uid: user.uid,
@@ -265,12 +284,22 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
           lastActive: serverTimestamp(),
         },
         { merge: true },
-      ).catch(() => {});
+      ).catch((error) => {
+        if (isPermissionDenied(error)) {
+          hasPermission = false;
+          setPresencesEnabled(false);
+          setPresences([]);
+        }
+      });
+    };
 
     publishPresence(cursorRef.current);
-    const heartbeat = setInterval(() => publishPresence(cursorRef.current), 15000);
+    const heartbeat = setInterval(() => {
+      if (!hasPermission) return;
+      publishPresence(cursorRef.current);
+    }, 15000);
 
-    const unsubscribe = onSnapshot(
+    unsubscribe = onSnapshot(
       collection(db, `pages/${pageId}/presences`),
       (snapshot) => {
         const now = Date.now();
@@ -293,6 +322,15 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
             suppressPermissionToast: true,
           },
         );
+        if (isPermissionDenied(error)) {
+          hasPermission = false;
+          setPresencesEnabled(false);
+          setPresences([]);
+          if (unsubscribe) {
+            unsubscribe();
+            unsubscribe = null;
+          }
+        }
         setPresences([]);
       },
     );
@@ -303,10 +341,11 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
     return () => {
       window.removeEventListener("beforeunload", cleanupPresence);
       clearInterval(heartbeat);
+      hasPermission = false;
       cleanupPresence();
-      unsubscribe();
+      unsubscribe?.();
     };
-  }, [pageId, user, page, profile]);
+  }, [pageId, user, page, profile, presencesEnabled]);
 
   const sharePage = () => {
     navigator.clipboard.writeText(window.location.href);
@@ -317,6 +356,7 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
   const onCursorMove = (pos: number) => {
     cursorRef.current = pos;
     if (!user || !page) return;
+    if (!presencesEnabled) return;
     const now = Date.now();
     if (now - lastCursorPushRef.current < 40) return;
     lastCursorPushRef.current = now;
