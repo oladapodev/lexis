@@ -9,19 +9,6 @@ export default defineConfig(({mode}) => {
     plugins: [react(), tailwindcss()],
     build: {
       chunkSizeWarningLimit: 1200,
-      rollupOptions: {
-        output: {
-          manualChunks: (id) => {
-            if (id.includes('node_modules')) {
-              if (id.includes('react/') || id.includes('react-dom')) return 'vendor-react';
-              if (id.includes('firebase')) return 'vendor-firebase';
-              if (id.includes('yjs') || id.includes('lib0') || id.includes('y-protocols')) return 'vendor-yjs';
-              return 'vendor';
-            }
-            return undefined;
-          },
-        },
-      },
     },
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
