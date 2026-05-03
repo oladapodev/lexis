@@ -169,6 +169,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
+      if (u.isAnonymous) {
+        setProfile({
+          uid: u.uid,
+          email: null,
+          displayName: u.displayName || 'Guest',
+          photoURL: u.photoURL || null,
+          avatarSeed: u.photoURL ? null : getRandomAvatarSeed(u.uid),
+          theme: 'system',
+        });
+        setLoading(false);
+        return;
+      }
+
       try {
         const userDoc = doc(db, 'users', u.uid);
         const snapshot = await getDoc(userDoc);
