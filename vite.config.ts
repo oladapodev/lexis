@@ -13,7 +13,6 @@ export default defineConfig(({mode}) => {
         output: {
           manualChunks: (id) => {
             if (id.includes('node_modules')) {
-              if (id.includes('@tiptap')) return 'vendor-tiptap';
               if (id.includes('react/') || id.includes('react-dom')) return 'vendor-react';
               if (id.includes('firebase')) return 'vendor-firebase';
               if (id.includes('yjs') || id.includes('lib0') || id.includes('y-protocols')) return 'vendor-yjs';
