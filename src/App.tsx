@@ -12,7 +12,7 @@ import { Toaster, toast } from 'sonner';
 import { CommandPalette } from './components/CommandPalette';
 
 function Dashboard() {
-  const { user, signInAnon, theme, setTheme, toolbarPosition } = useAuth();
+  const { user, loading, signInAnon, theme, setTheme, toolbarPosition } = useAuth();
   const { pageId } = useParams();
   const navigate = useNavigate();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -55,10 +55,10 @@ function Dashboard() {
   }, []);
 
   useEffect(() => {
-    if (!user) {
+    if (!loading && !user) {
       signInAnon();
     }
-  }, [user, signInAnon]);
+  }, [loading, user, signInAnon]);
 
   const toggleSidebar = () => setIsSidebarCollapsed(!isSidebarCollapsed);
 
@@ -218,4 +218,3 @@ export default function App() {
     </BrowserRouter>
   );
 }
-
