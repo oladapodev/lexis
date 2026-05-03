@@ -121,7 +121,11 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
       },
       (error) => {
         setLoading(false);
-        handleFirestoreError(error, OperationType.GET, pagePath);
+        handleFirestoreError(error, OperationType.GET, pagePath, {
+          suppressPermissionToast: true,
+        });
+        setPage(null);
+        navigate("/dashboard");
       },
     );
 
@@ -218,7 +222,9 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
       },
       (error) => {
         setSyncing(false);
-        handleFirestoreError(error, OperationType.LIST, `pages/${pageId}/updates`);
+        handleFirestoreError(error, OperationType.LIST, `pages/${pageId}/updates`, {
+          suppressPermissionToast: true,
+        });
       },
     );
 
@@ -283,7 +289,11 @@ export const Editor: React.FC<EditorProps> = ({ pageId }) => {
           error,
           OperationType.LIST,
           `pages/${pageId}/presences`,
+          {
+            suppressPermissionToast: true,
+          },
         );
+        setPresences([]);
       },
     );
 
